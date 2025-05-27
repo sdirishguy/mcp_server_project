@@ -1,0 +1,3 @@
+model-context-protocol
+aiohttp
+python-dotenv # Good for optionally loading .env for local dev outside Docker, though primarily relying on Docker's env vars
