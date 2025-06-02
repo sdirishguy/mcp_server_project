@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Python MCP Server Project
 
 ## Description
