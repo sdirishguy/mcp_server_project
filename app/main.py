@@ -4,13 +4,16 @@ import logging
 import uvicorn
 
 from mcp.server.fastmcp import FastMCP
+# We won't use mcp.server.fastmcp.server.Settings directly to control Uvicorn's binding here
+# but FastMCP might still use it for its internal app-level config.
+from mcp.server.fastmcp.server import Settings as FastMCPSettings 
+# ---> ADD THESE STARLETTE IMPORTS IF THEY ARE MISSING <---
+from starlette.applications import Starlette
+from starlette.routing import Mount 
+from starlette.responses import JSONResponse 
+# ---> END OF STARLETTE IMPORTS <---
 from .config import SERVER_PORT, logger
 from .tools import MCP_TOOLS_REGISTRY
-
-# Import Starlette components
-from starlette.applications import Starlette
-from starlette.routing import Mount
-from starlette.responses import JSONResponse # For health check
 
 try:
     from dotenv import load_dotenv
@@ -19,64 +22,72 @@ try:
 except ImportError:
     logger.info("python-dotenv not installed or .env file not found.")
 
-# Create the FastMCP master instance
-mcp_master_instance = FastMCP(
-    tools=MCP_TOOLS_REGISTRY,
-    server_id="python-mcp-server-docker-v1",
-    display_name="Python MCP Development Server (Dockerized)",
-    description="An MCP server providing file system and shell command tools, running in Docker.",
+# Create FastMCP instance - its internal settings might still default
+# but Uvicorn's settings will control the actual server binding.
+mcp_app_level_settings = FastMCPSettings(
+    # These might be used by FastMCP for generating URLs or other internal logic
+    host="0.0.0.0", # Informational for FastMCP itself
+    port=SERVER_PORT, # Informational for FastMCP itself
+    log_level=logging.getLevelName(logger.getEffectiveLevel())
 )
-logger.info(f"FastMCP master instance created with {len(MCP_TOOLS_REGISTRY)} tools.")
+mcp_instance = FastMCP(
+    name="MyDockerizedMCPApp",
+    tools=MCP_TOOLS_REGISTRY,
+    settings=mcp_app_level_settings
+)
+logger.info(f"FastMCP instance '{mcp_instance.name}' created. Its internal settings.host='{mcp_instance.settings.host}', settings.port={mcp_instance.settings.port}")
 
-# --- Create a root Starlette application and mount MCP components ---
-root_asgi_app = Starlette(debug=True) # Enable debug mode for more detailed errors if needed
+# Create a Starlette root application
+root_starlette_app = Starlette(debug=True) # Add debug=True for more verbose errors from Starlette
 
+# Mount the FastMCP components.
+# The documentation suggests these methods return ASGI apps.
+# The MCP spec typically uses /mcp for SSE and /mcp.json for JSON-RPC (often via POST)
+# The streamable_http_app might handle both if it's the primary one.
+# The docs say: "Streamable HTTP servers are mounted at /mcp."
+# And "SSE servers are mounted at /sse" by default if using FastMCP's own run()
+# Let's try mounting streamable_http_app at /mcp as it's preferred.
 try:
-    sse_app_callable = mcp_master_instance.sse_app() # Call the method to get the ASGI app
-    root_asgi_app.mount("/mcp", app=sse_app_callable, name="mcp_sse")
-    logger.info(f"Mounted sse_app from FastMCP at /mcp. Type: {type(sse_app_callable)}")
-except AttributeError:
-    logger.error("mcp_master_instance does not have .sse_app() method or it failed.")
-except Exception as e:
-    logger.error(f"Error getting or mounting sse_app: {e}", exc_info=True)
+    http_app_callable = mcp_instance.streamable_http_app() # Call the method
+    root_starlette_app.mount("/mcp", app=http_app_callable, name="mcp_http") # Primary MCP endpoint
+    logger.info(f"Mounted streamable_http_app from FastMCP at /mcp. Type: {type(http_app_callable)}")
 
-try:
-    # streamable_http_app likely handles JSON-RPC, often at /mcp.json
-    http_app_callable = mcp_master_instance.streamable_http_app() # Call the method
-    root_asgi_app.mount("/mcp.json", app=http_app_callable, name="mcp_jsonrpc")
-    logger.info(f"Mounted streamable_http_app from FastMCP at /mcp.json. Type: {type(http_app_callable)}")
-except AttributeError:
-    logger.error("mcp_master_instance does not have .streamable_http_app() method or it failed.")
-except Exception as e:
-    logger.error(f"Error getting or mounting streamable_http_app: {e}", exc_info=True)
+    # If SSE is truly separate and also needed at a different path or for the /mcp path itself
+    # and streamable_http_app doesn't cover it:
+    # sse_app_callable = mcp_instance.sse_app()
+    # root_starlette_app.mount("/mcp_sse_specific_path", app=sse_app_callable, name="mcp_sse")
+    # However, "Streamable HTTP transport is superseding SSE transport" implies streamable_http_app is key.
+    # It also mentions "Streamable HTTP transport supports: ... JSON or SSE response formats"
+    # This means streamable_http_app mounted at /mcp should handle both.
 
-# Add a simple health check to the root Starlette app
+except AttributeError as e:
+    logger.error(f"Failed to get or mount FastMCP sub-apps: {e}", exc_info=True)
+except Exception as e_mount:
+    logger.error(f"General error mounting FastMCP sub-apps: {e_mount}", exc_info=True)
+
+
+# Add our own simple health check to the root Starlette app
 async def health_check_endpoint(request):
+    from starlette.responses import JSONResponse
     logger.info("Health check endpoint /health called.")
     return JSONResponse({"status": "ok", "message": "MCP Server (Starlette + FastMCP) is healthy."})
 
-root_asgi_app.add_route("/health", health_check_endpoint, methods=["GET"], name="health")
+root_starlette_app.add_route("/health", health_check_endpoint, methods=["GET"], name="health")
 logger.info("Added /health check endpoint to root Starlette app.")
 
 
-async def run_composite_server():
-    logger.info("Starting composed ASGI application (Starlette + FastMCP sub-apps) with Uvicorn...")
-    try:
-        config = uvicorn.Config(
-            app=root_asgi_app,  # Pass the composite Starlette app
-            host="0.0.0.0",
-            port=SERVER_PORT,
-            log_level=logging.getLevelName(logger.getEffectiveLevel()).lower(),
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
-    except Exception as e:
-        logger.critical(f"Uvicorn server crashed: {e}", exc_info=True)
-    finally:
-        logger.info("Uvicorn server process finished or encountered an error.")
-
+# This block runs when you execute `python -m app.main`
+# It will now start Uvicorn with our Starlette app.
 if __name__ == "__main__":
-    # The Starlette app 'root_asgi_app' is defined at module level
-    # Uvicorn can also run it via import string: "app.main:root_asgi_app"
-    # but programmatic start is fine.
-    asyncio.run(run_composite_server())
+    logger.info(f"Starting Starlette-wrapped FastMCP server with Uvicorn on host 0.0.0.0, port {SERVER_PORT}...")
+    try:
+        uvicorn.run(
+            root_starlette_app, # Serve the Starlette app
+            host="0.0.0.0",     # Explicit host for Uvicorn
+            port=SERVER_PORT,   # Explicit port for Uvicorn
+            log_level=logging.getLevelName(logger.getEffectiveLevel()).lower()
+        )
+    except Exception as e:
+        logger.critical(f"Failed to start Uvicorn server: {e}", exc_info=True)
+    finally:
+        logger.info("Server process finished or was interrupted.")

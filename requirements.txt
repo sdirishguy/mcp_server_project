@@ -1,4 +1,4 @@
-mcp
+mcp[cli]
 aiohttp
 python-dotenv
 uvicorn[standard]
