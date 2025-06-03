@@ -3,3 +3,6 @@ aiohttp
 python-dotenv
 uvicorn[standard]
 starlette
+# Add any extra libraries you use in your tools, e.g.:
+requests
+numpy

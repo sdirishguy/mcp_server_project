@@ -4,8 +4,8 @@ import json
 import logging
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
-import httpx # <--- ADDED IMPORT FOR httpx
-from mcp.client.streamable_http import streamablehttp_client 
+import httpx
+from mcp.client.streamable_http import streamablehttp_client
 import mcp.types
 from mcp import ClientSession, Tool, Resource
 
@@ -20,138 +20,187 @@ if TYPE_CHECKING:
     _ErrorData = mcp.types.ErrorData
     _CallToolResult = mcp.types.CallToolResult
 else:
+    class PlaceholderContent:
+        def __init__(self, type, data): self.type = type; self.data = data
+    class PlaceholderContentType:
+        TEXT = "text"; JSON = "json"; IMAGE = "image"
+    class PlaceholderErrorData:
+        def __init__(self, code, message, data=None): self.code=code; self.message=message; self.data=data
+    class PlaceholderCallToolResult:
+         def __init__(self, results=None, error=None): self.results=results; self.error=error
+
     _Content = getattr(mcp.types, 'Content', None)
-    _ContentType = getattr(mcp.types, 'ContentType', None)
-    _ErrorData = mcp.types.ErrorData 
-    _CallToolResult = mcp.types.CallToolResult
     if _Content is None:
-        logger.warning("Client: Could not dynamically resolve mcp.types.Content, using placeholder.")
-        class PlaceholderContent:
-            def __init__(self, type, data): self.type = type; self.data = data
+        logger.warning("Client: Could not resolve mcp.types.Content via getattr, using placeholder.")
         _Content = PlaceholderContent
+
+    _ContentType = getattr(mcp.types, 'ContentType', None)
     if _ContentType is None:
-        logger.warning("Client: Could not dynamically resolve mcp.types.ContentType, using placeholder.")
-        class PlaceholderContentType:
-            TEXT = "text"; JSON = "json"; IMAGE = "image"
+        logger.warning("Client: Could not resolve mcp.types.ContentType via getattr, using placeholder.")
         _ContentType = PlaceholderContentType
 
-# --- Server Configuration ---
-SERVER_BASE_URL = "http://localhost:3000"
-MCP_SESSION_PATH = "/mcp/" 
-MCP_FULL_ENDPOINT_URL = f"{SERVER_BASE_URL.rstrip('/')}{MCP_SESSION_PATH}"
+    _ErrorData = getattr(mcp.types, 'ErrorData', None)
+    if _ErrorData is None:
+        logger.error("CRITICAL: Client could not resolve mcp.types.ErrorData! Using placeholder.")
+        _ErrorData = PlaceholderErrorData
 
-# --- Mock Response and Print Helper (Keep as is from response #50) ---
+    _CallToolResult = getattr(mcp.types, 'CallToolResult', None)
+    if _CallToolResult is None:
+        logger.error("CRITICAL: Client could not resolve mcp.types.CallToolResult! Using placeholder.")
+        _CallToolResult = PlaceholderCallToolResult
+
+# --- Server Configuration ---
+SERVER_BASE_URL = "http://localhost:8000"
+MCP_FULL_ENDPOINT_URL = f"{SERVER_BASE_URL}/mcp"
+
+# --- Mock Response and Print Helper ---
 class MockToolCallResponse:
-    def __init__(self, results: Optional[List[_Content]] = None, error: Optional[_ErrorData] = None, raw_response: Optional[Dict] = None):
-        self.results = results; self.error = error; self._raw_response = raw_response
+    def __init__(self, results: Optional[List[_Content]] = None,
+                 error: Optional[_ErrorData] = None,
+                 raw_response: Optional[Dict] = None):
+        self.results = results
+        self.error = error
+        self._raw_response = raw_response
+
     @classmethod
     def from_sdk_response(cls, sdk_response_obj):
-        if not all([_Content, _ErrorData, _ContentType]): logger.error("Client: Core types for response parsing not resolved.")
+        if not all([_Content, _ErrorData, _ContentType, _CallToolResult]):
+            logger.error("Client: Core types for response parsing not resolved or are placeholders. Parsing may be basic/unreliable.")
+
         if hasattr(sdk_response_obj, 'results') and hasattr(sdk_response_obj, 'error'):
-            pr = []; err = sdk_response_obj.error
+            parsed_results = []
             if sdk_response_obj.results:
                 for item in sdk_response_obj.results:
-                    if isinstance(item, _Content): pr.append(item)
-                    elif isinstance(item, dict) and "type" in item and "data" in item: pr.append(_Content(type=item["type"], data=item["data"]))
-                    else: pr.append(_Content(type="unknown_sdk_result_item", data=str(item)))
-            if err and not isinstance(err, _ErrorData) and isinstance(err, dict):
-                err = _ErrorData(code=err.get("code","ERR"), message=err.get("message", "Unknown"), data=err.get("data"))
-            return cls(results=pr if pr else None, error=err)
+                    if isinstance(item, _Content):
+                        parsed_results.append(item)
+                    elif isinstance(item, dict) and "type" in item and "data" in item:
+                        parsed_results.append(_Content(type=item["type"], data=item["data"]))
+                    else:
+                        parsed_results.append(_Content(type="unknown_sdk_result_item", data=str(item)))
+            parsed_error = sdk_response_obj.error
+            if sdk_response_obj.error and not isinstance(sdk_response_obj.error, _ErrorData) and isinstance(sdk_response_obj.error, dict):
+                parsed_error = _ErrorData(code=sdk_response_obj.error.get("code","UNKNOWN_ERROR_CODE"),
+                                          message=sdk_response_obj.error.get("message", "Unknown error"),
+                                          data=sdk_response_obj.error.get("data"))
+            return cls(results=parsed_results if parsed_results else None, error=parsed_error)
         elif isinstance(sdk_response_obj, dict):
-            rl = sdk_response_obj.get("results"); pr = []
-            if rl:
-                for item_dict in rl:
+            results_list = sdk_response_obj.get("results")
+            parsed_results = []
+            if results_list:
+                for item_dict in results_list:
                     if isinstance(item_dict, dict) and "type" in item_dict and "data" in item_dict:
-                        ctvs = item_dict["type"]; actual_ct = ctvs
+                        content_type_value_str = item_dict["type"]
+                        actual_content_type = content_type_value_str
+
                         if _ContentType is not PlaceholderContentType:
-                           if hasattr(_ContentType, ctvs.upper()): actual_ct = getattr(_ContentType, ctvs.upper())
-                           elif hasattr(_ContentType, '__call__') and not isinstance(_ContentType, type(type)):
-                               try: actual_ct = _ContentType(ctvs)
+                           if hasattr(_ContentType, content_type_value_str.upper()):
+                               actual_content_type = getattr(_ContentType, content_type_value_str.upper())
+                           elif callable(_ContentType) and not isinstance(_ContentType, type(type)):
+                               try: actual_content_type = _ContentType(content_type_value_str)
                                except (ValueError, TypeError): pass
-                        pr.append(_Content(type=actual_ct, data=item_dict["data"]))
-                    else: pr.append(_Content(type="unknown_dict_item", data=str(item_dict)))
-            ed = sdk_response_obj.get("error"); pe = None
-            if ed and isinstance(ed, dict) and "code" in ed and "message" in ed:
-                pe = _ErrorData(code=ed["code"], message=ed["message"], data=ed.get("data"))
-            return cls(results=pr if pr else None, error=pe, raw_response=sdk_response_obj)
+
+                        parsed_results.append(_Content(type=actual_content_type, data=item_dict["data"]))
+                    else:
+                        parsed_results.append(_Content(type="unknown_dict_item", data=str(item_dict)))
+
+            error_dict = sdk_response_obj.get("error")
+            parsed_error = None
+            if error_dict and isinstance(error_dict, dict) and "code" in error_dict and "message" in error_dict:
+                parsed_error = _ErrorData(code=error_dict["code"], message=error_dict["message"], data=error_dict.get("data"))
+
+            return cls(results=parsed_results if parsed_results else None, error=parsed_error, raw_response=sdk_response_obj)
+
+        logger.warning(f"SDK response format not directly parseable: {type(sdk_response_obj)}. Storing as raw.")
         return cls(raw_response={"unknown_response_format": str(sdk_response_obj)})
 
 def print_tool_call_summary(tool_name: str, params: Dict[str, Any], response_wrapper: MockToolCallResponse):
-    logger.info(f"--- Calling Tool: {tool_name} ---"); logger.info(f"Params: {json.dumps(params)}")
+    logger.info(f"--- Calling Tool: {tool_name} ---")
+    logger.info(f"Params: {json.dumps(params)}")
     if response_wrapper.error:
-        logger.error(f"Error Code: {response_wrapper.error.code}"); logger.error(f"Error Message: {response_wrapper.error.message}")
-        if response_wrapper.error.data: logger.error(f"Error Data: {response_wrapper.error.data}")
+        logger.error(f"Error Code: {getattr(response_wrapper.error, 'code', 'N/A')}")
+        logger.error(f"Error Message: {getattr(response_wrapper.error, 'message', 'N/A')}")
+        if hasattr(response_wrapper.error, 'data') and response_wrapper.error.data:
+            logger.error(f"Error Data: {response_wrapper.error.data}")
     elif response_wrapper.results:
         logger.info("Results:")
-        for ci in response_wrapper.results:
-            ctv = ci.type; cts = ctv.value if hasattr(ctv, 'value') and not isinstance(ctv, str) else str(ctv)
-            logger.info(f"  - Type: {cts}"); logger.info(f"    Data: {str(ci.data)[:200]}")
-    elif response_wrapper._raw_response: logger.info(f"Raw Response (parse failed): {json.dumps(response_wrapper._raw_response, indent=2)}")
-    else: logger.warning("No results/error/raw in response.")
+        for content_item in response_wrapper.results:
+            content_type_val = getattr(content_item, 'type', 'unknown_type')
+            content_type_str = content_type_val.value if hasattr(content_type_val, 'value') and not isinstance(content_type_val, str) else str(content_type_val)
+            logger.info(f"  - Type: {content_type_str}")
+            logger.info(f"    Data: {str(getattr(content_item, 'data', 'N/A'))[:200]}")
+    elif response_wrapper._raw_response:
+        logger.info(f"Raw Response (could not parse into known structure): {json.dumps(response_wrapper._raw_response, indent=2)}")
+    else:
+        logger.warning("No results or error in response, and no raw data found.")
     logger.info("------------------------------------\n")
 
 # --- Main Test Logic ---
 async def main_test_logic():
-    if _Content is PlaceholderContent or _ContentType is PlaceholderContentType:
-        logger.warning("Client is using placeholder types for Content/ContentType. Result parsing might be limited.")
-    if not _ErrorData or not _CallToolResult:
-        logger.critical("Essential MCP types ErrorData or CallToolResult could not be resolved. Client will likely fail.")
-        return
+    if _Content is PlaceholderContent:
+        logger.warning("Client is using placeholder for Content type.")
+    if _ContentType is PlaceholderContentType:
+        logger.warning("Client is using placeholder for ContentType type.")
+    if _ErrorData is PlaceholderErrorData:
+        logger.error("CRITICAL: Client using placeholder for ErrorData. Error parsing will be basic.")
+    if _CallToolResult is PlaceholderCallToolResult:
+        logger.error("CRITICAL: Client using placeholder for CallToolResult. Tool call result parsing may be basic.")
 
     logger.info(f"Attempting to establish MCP stream connection to {MCP_FULL_ENDPOINT_URL}...")
     try:
-        # Removed timeout argument from streamablehttp_client
-        async with streamablehttp_client(MCP_FULL_ENDPOINT_URL) as (read_stream, write_stream, initial_http_response):
-            logger.info(f"Stream connection established. Initial HTTP response status: {initial_http_response.status_code if initial_http_response else 'N/A'}")
+        async with streamablehttp_client(MCP_FULL_ENDPOINT_URL) as (read_stream, write_stream, initial_http_response_or_other):
+            status_code_to_log = 'N/A'
+            if initial_http_response_or_other:
+                if hasattr(initial_http_response_or_other, 'status_code'):
+                    status_code_to_log = initial_http_response_or_other.status_code
+                else:
+                    logger.info(f"Stream conn: Third yielded item type: {type(initial_http_response_or_other)}, value: {str(initial_http_response_or_other)[:100]}")
 
-            async with ClientSession(
-                read_stream, 
-                write_stream,
-                client_id="test-client-py-v1.5", 
-                display_name="Python MCP Stream Test Client"
-            ) as client:
+            if status_code_to_log != 'N/A':
+                 logger.info(f"Stream conn: Initial HTTP status: {status_code_to_log}")
+            else:
+                 logger.info("Stream conn established (status code N/A from third yielded item).")
+
+            async with ClientSession(read_stream, write_stream) as client:
                 logger.info(f"ClientSession created. Attempting to initialize...")
                 initialize_response = await client.initialize()
                 logger.info(f"Successfully initialized with server. Server capabilities: {initialize_response}")
 
-                # Tool Listing
-                available_tools_raw: List[Dict] = await client.list_tools()
+                available_tools_raw = await client.list_tools()
                 logger.info(f"Raw response from list_tools: {available_tools_raw}")
-                if isinstance(available_tools_raw, list):
-                    for tool_data in available_tools_raw:
-                        tool_instance = Tool(**tool_data) if isinstance(tool_data, dict) else tool_data
-                        if isinstance(tool_instance, Tool):
-                            logger.info(f"  - Discovered Tool: Name={tool_instance.name}, Desc={tool_instance.description}")
-                            if hasattr(tool_instance, 'inputSchema'): logger.info(f"    Schema: {tool_instance.inputSchema}")
-                        else: logger.warning(f"Unexpected tool data format: {tool_data}")
-                else: logger.warning("No tools listed or unexpected format.")
+                if hasattr(available_tools_raw, 'tools'):
+                    for tool_instance in available_tools_raw.tools:
+                        logger.info(f"  - Discovered Tool: Name={tool_instance.name}, Desc={tool_instance.description}")
+                        if hasattr(tool_instance, 'inputSchema'): logger.info(f"    Schema: {tool_instance.inputSchema}")
+                else:
+                    logger.warning("No tools listed or unexpected format.")
 
                 logger.info("\n--- Starting Tool Call Tests ---")
-                test_dir = "test_client_stream_final_v2" # New unique name
+                test_dir = "test_client_final_final_dir"
                 params_create = {"path": test_dir}
-                resp_create = await client.call_tool("file_system_create_directory", params_create)
-                print_tool_call_summary("file_system_create_directory", params_create, MockToolCallResponse.from_sdk_response(resp_create))
+                response_create_raw = await client.call_tool(name="file_system_create_directory", arguments={"params": params_create})
+                print_tool_call_summary("file_system_create_directory", params_create, MockToolCallResponse.from_sdk_response(response_create_raw))
 
-                test_file = f"{test_dir}/hello_stream_final_v2.txt"
-                params_write = {"path": test_file, "content": "Hello from the fully streamed client!"}
-                resp_write = await client.call_tool("file_system_write_file", params=params_write)
-                print_tool_call_summary("file_system_write_file", params_write, MockToolCallResponse.from_sdk_response(resp_write))
+                test_file_path = f"{test_dir}/hello_mcp_client_ultimate.txt"
+                params_write = {"path": test_file_path, "content": "Hello from the hopefully final Python MCP test client!"}
+                response_write_raw = await client.call_tool(name="file_system_write_file", arguments={"params": params_write})
+                print_tool_call_summary("file_system_write_file", params_write, MockToolCallResponse.from_sdk_response(response_write_raw))
 
-                params_read = {"path": test_file}
-                resp_read = await client.call_tool("file_system_read_file", params=params_read)
-                print_tool_call_summary("file_system_read_file", params_read, MockToolCallResponse.from_sdk_response(resp_read))
+                params_read = {"path": test_file_path}
+                response_read_raw = await client.call_tool(name="file_system_read_file", arguments={"params": params_read})
+                print_tool_call_summary("file_system_read_file", params_read, MockToolCallResponse.from_sdk_response(response_read_raw))
 
-                params_list = {"path": test_dir}
-                resp_list = await client.call_tool("file_system_list_directory", params_list)
-                print_tool_call_summary("file_system_list_directory", params_list, MockToolCallResponse.from_sdk_response(resp_list))
+                params_list_dir = {"path": test_dir}
+                response_list_raw = await client.call_tool(name="file_system_list_directory", arguments={"params": params_list_dir})
+                print_tool_call_summary("file_system_list_directory (specific dir)", params_list_dir, MockToolCallResponse.from_sdk_response(response_list_raw))
 
-                params_exec = {"command": "echo 'Shell test via fully streamed client'"}
-                resp_exec = await client.call_tool("execute_shell_command", params=params_exec)
-                print_tool_call_summary("execute_shell_command", params_exec, MockToolCallResponse.from_sdk_response(resp_exec))
+                safe_command = "echo 'MCP shell test from client: This should be it!'"
+                params_exec = {"command": safe_command}
+                response_exec_raw = await client.call_tool(name="execute_shell_command", arguments={"params": params_exec})
+                print_tool_call_summary("execute_shell_command (echo)", params_exec, MockToolCallResponse.from_sdk_response(response_exec_raw))
 
     except ConnectionRefusedError:
         logger.error(f"Connection refused. Is the MCP server running at {MCP_FULL_ENDPOINT_URL}?")
-    except httpx.ConnectError as e: # httpx import is now present
+    except httpx.ConnectError as e:
         logger.error(f"HTTPX ConnectError to {MCP_FULL_ENDPOINT_URL}: {e}. Is server URL correct & server running?")
     except Exception as e:
         logger.error(f"An error occurred during client operations: {e}", exc_info=True)
