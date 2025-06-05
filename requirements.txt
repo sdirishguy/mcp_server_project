@@ -1,8 +1,17 @@
-mcp[cli]
-aiohttp
-python-dotenv
-uvicorn[standard]
-starlette
-# Add any extra libraries you use in your tools, e.g.:
-requests
-numpy
+# requirements.txt
+
+# Core MCP SDK with CLI support (ensure you have the right extras)
+mcp[cli]==1.9.2
+
+# FastAPI & Uvicorn (if you want to also build a native API, not just MCP's endpoints)
+fastapi>=0.110
+uvicorn[standard]>=0.23
+
+# Optional: Add your preferred LLM API SDKs here as you integrate (OpenAI, Gemini, etc.)
+openai>=1.23.0
+google-generativeai>=0.4.1
+
+# Dev & utilities (if you want formatting/linting or testing)
+black
+isort
+pytest

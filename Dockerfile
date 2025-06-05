@@ -1,35 +1,35 @@
-FROM python:3.12-slim-bookworm
+# Dockerfile
 
-# System prep (optional but common)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+FROM python:3.12-slim
+
+# System deps and setup
+RUN apt-get update && apt-get install -y \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Create appuser (not root)
-ARG APP_USER=appuser
-ARG APP_GROUP=appgroup
-ARG UID=1001
-ARG GID=1001
-RUN groupadd -g ${GID} ${APP_GROUP} && \
-    useradd --create-home --uid ${UID} --gid ${APP_GROUP} --shell /bin/bash ${APP_USER}
+# Make a non-root user for safety
+RUN useradd -ms /bin/bash appuser
 
-# Set workdir
+# Workdir in the container
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Requirements
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your code
-COPY ./app /app/app
+# Copy app code
+COPY app ./app
+COPY test_mcp_client.py ./
 
-# (Optional: for persistent data mount)
-RUN mkdir -p /app/shared_host_folder && chown ${APP_USER}:${APP_GROUP} /app/shared_host_folder
-RUN chown -R ${APP_USER}:${APP_GROUP} /app
+# Create a host_data dir for persistent volumes and make it accessible
+RUN mkdir -p /app/host_data && chown appuser:appuser /app/host_data
 
-USER ${APP_USER}:${APP_GROUP}
+# Default to non-root user
+USER appuser
 
-EXPOSE 3000
+# Expose MCP port (and FastAPI if you use it separately)
+EXPOSE 8000
 
+# Entrypoint: run the MCP server by default
 CMD ["python", "-m", "app.main"]

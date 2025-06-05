@@ -1,170 +1,135 @@
 # app/tools.py
 
 import asyncio
-import shlex
 import json
+import shlex
+import os
 from pathlib import Path
+from typing import Dict, Any
 
-from mcp.types import CallToolResult, TextContent  # Use ImageContent, EmbeddedResource if you add other content types
 from .config import MCP_BASE_WORKING_DIR, ALLOW_ARBITRARY_SHELL_COMMANDS, logger
 
-def resolve_path(rel_path: str) -> Path:
-    # Prevent path traversal
-    base = MCP_BASE_WORKING_DIR.resolve()
-    target = (base / rel_path.lstrip("/")).resolve()
-    if base not in target.parents and base != target:
-        raise ValueError(f"Access denied: Path '{target}' is outside of base '{base}'")
-    return target
-
-async def file_system_create_directory_tool(params: dict) -> CallToolResult:
-    path_str = params.get("path")
-    if not path_str or not isinstance(path_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'path' (str) is required.")],
-            isError=True
-        )
+# --- Utility functions for path safety ---
+def _is_path_within_base(path_to_check: Path, base_path: Path) -> bool:
     try:
-        target = resolve_path(path_str)
+        return base_path in path_to_check.resolve().parents or base_path == path_to_check.resolve()
+    except Exception:
+        return False
+
+def _resolve_and_verify_path(user_path: str) -> Path:
+    base = MCP_BASE_WORKING_DIR
+    norm_path = user_path.lstrip('/')
+    resolved = (base / norm_path).resolve()
+    if not _is_path_within_base(resolved, base):
+        logger.warning(f"Access denied: '{user_path}' → '{resolved}' (outside base '{base}')")
+        raise ValueError(f"Path '{user_path}' is outside the allowed base directory.")
+    return resolved
+
+# --- Tool: Create Directory ---
+async def file_system_create_directory_tool(params: Dict[str, Any]) -> dict:
+    path = params.get("path")
+    if not path or not isinstance(path, str):
+        return _error("Missing or invalid 'path' parameter.")
+    try:
+        target = _resolve_and_verify_path(path)
         target.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Directory created: {target}")
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Directory '{path_str}' created successfully.")],
-            isError=False
-        )
+        return _text_result(f"Directory '{target.relative_to(MCP_BASE_WORKING_DIR)}' created successfully.")
     except Exception as e:
-        logger.error(f"Error creating directory '{path_str}': {e}", exc_info=True)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Failed to create directory: {e}")],
-            isError=True
-        )
+        logger.error(f"Error creating directory '{path}': {e}")
+        return _error(str(e))
 
-async def file_system_write_file_tool(params: dict) -> CallToolResult:
-    path_str = params.get("path")
-    content_str = params.get("content")
-    if not path_str or not isinstance(path_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'path' (str) is required.")],
-            isError=True
-        )
-    if not isinstance(content_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'content' (str) is required.")],
-            isError=True
-        )
+# --- Tool: Write File ---
+async def file_system_write_file_tool(params: Dict[str, Any]) -> dict:
+    path, content = params.get("path"), params.get("content")
+    if not path or not isinstance(path, str):
+        return _error("Missing or invalid 'path' parameter.")
+    if not isinstance(content, str):
+        return _error("Missing or invalid 'content' parameter.")
     try:
-        target = resolve_path(path_str)
+        target = _resolve_and_verify_path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content_str, encoding="utf-8")
-        logger.info(f"File written: {target}")
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"File '{path_str}' written successfully.")],
-            isError=False
-        )
+        target.write_text(content, encoding="utf-8")
+        return _text_result(f"File '{target.relative_to(MCP_BASE_WORKING_DIR)}' written successfully.")
     except Exception as e:
-        logger.error(f"Error writing file '{path_str}': {e}", exc_info=True)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Failed to write file: {e}")],
-            isError=True
-        )
+        logger.error(f"Error writing file '{path}': {e}")
+        return _error(str(e))
 
-async def file_system_read_file_tool(params: dict) -> CallToolResult:
-    path_str = params.get("path")
-    if not path_str or not isinstance(path_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'path' (str) is required.")],
-            isError=True
-        )
+# --- Tool: Read File ---
+async def file_system_read_file_tool(params: Dict[str, Any]) -> dict:
+    path = params.get("path")
+    if not path or not isinstance(path, str):
+        return _error("Missing or invalid 'path' parameter.")
     try:
-        target = resolve_path(path_str)
+        target = _resolve_and_verify_path(path)
         if not target.is_file():
-            return CallToolResult(
-                content=[TextContent(type="text", text="File not found.")],
-                isError=True
-            )
+            return _error("File not found.")
         content = target.read_text(encoding="utf-8")
-        logger.info(f"File read: {target}")
-        return CallToolResult(
-            content=[TextContent(type="text", text=content)],
-            isError=False
-        )
+        return _text_result(content)
     except Exception as e:
-        logger.error(f"Error reading file '{path_str}': {e}", exc_info=True)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Failed to read file: {e}")],
-            isError=True
-        )
+        logger.error(f"Error reading file '{path}': {e}")
+        return _error(str(e))
 
-async def file_system_list_directory_tool(params: dict) -> CallToolResult:
-    path_str = params.get("path", ".")
-    if not isinstance(path_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'path' (str) is required.")],
-            isError=True
-        )
+# --- Tool: List Directory ---
+async def file_system_list_directory_tool(params: Dict[str, Any]) -> dict:
+    path = params.get("path", ".")
+    if not isinstance(path, str):
+        return _error("Missing or invalid 'path' parameter.")
     try:
-        target = resolve_path(path_str)
+        target = _resolve_and_verify_path(path)
         if not target.is_dir():
-            return CallToolResult(
-                content=[TextContent(type="text", text="Directory not found.")],
-                isError=True
-            )
-        items = []
-        for item in target.iterdir():
-            item_type = "dir" if item.is_dir() else "file"
-            items.append(f"{item.name} ({item_type})")
-        logger.info(f"Listed directory: {target}")
-        if not items:
-            return CallToolResult(
-                content=[TextContent(type="text", text=f"Directory '{path_str}' is empty.")],
-                isError=False
-            )
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(items))],
-            isError=False
-        )
+            return _error("Directory not found.")
+        items = [f"{item.name} ({'dir' if item.is_dir() else 'file'})" for item in target.iterdir()]
+        return _text_result(json.dumps(items))
     except Exception as e:
-        logger.error(f"Error listing directory '{path_str}': {e}", exc_info=True)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Failed to list directory: {e}")],
-            isError=True
-        )
+        logger.error(f"Error listing directory '{path}': {e}")
+        return _error(str(e))
 
-async def execute_shell_command_tool(params: dict) -> CallToolResult:
-    command_str = params.get("command")
+# --- Tool: Execute Shell Command ---
+async def execute_shell_command_tool(params: Dict[str, Any]) -> dict:
+    command = params.get("command")
     working_dir = params.get("working_directory", ".")
-    if not command_str or not isinstance(command_str, str):
-        return CallToolResult(
-            content=[TextContent(type="text", text="Parameter 'command' (str) is required.")],
-            isError=True
-        )
     if not ALLOW_ARBITRARY_SHELL_COMMANDS:
-        return CallToolResult(
-            content=[TextContent(type="text", text="Shell command execution is disabled.")],
-            isError=True
-        )
+        return _error("Shell execution is disabled by config.")
+    if not command or not isinstance(command, str):
+        return _error("Missing or invalid 'command' parameter.")
     try:
-        cwd = resolve_path(working_dir)
-        command_parts = shlex.split(command_str)
-        process = await asyncio.create_subprocess_exec(
-            *command_parts,
-            cwd=str(cwd),
+        cwd = _resolve_and_verify_path(working_dir)
+        proc = await asyncio.create_subprocess_exec(
+            *shlex.split(command),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd)
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await proc.communicate()
         result = {
-            "stdout": stdout.decode("utf-8", errors="replace"),
-            "stderr": stderr.decode("utf-8", errors="replace"),
-            "return_code": process.returncode,
+            "stdout": stdout.decode(errors="replace"),
+            "stderr": stderr.decode(errors="replace"),
+            "return_code": proc.returncode
         }
-        logger.info(f"Executed shell command: {command_str} (cwd: {cwd})")
-        return CallToolResult(
-            content=[TextContent(type="text", text=json.dumps(result, indent=2))],
-            isError=process.returncode != 0
-        )
+        return _text_result(json.dumps(result))
     except Exception as e:
-        logger.error(f"Error executing shell command '{command_str}': {e}", exc_info=True)
-        return CallToolResult(
-            content=[TextContent(type="text", text=f"Failed to execute command: {e}")],
-            isError=True
-        )
+        logger.error(f"Error executing command '{command}': {e}")
+        return _error(str(e))
+
+# --- Result helpers for MCP protocol ---
+def _text_result(text: str) -> dict:
+    return {
+        "_meta": None,
+        "content": [{
+            "type": "text",
+            "text": text,
+            "annotations": None
+        }],
+        "isError": False
+    }
+
+def _error(message: str) -> dict:
+    return {
+        "_meta": None,
+        "content": [{
+            "type": "text",
+            "text": message,
+            "annotations": None
+        }],
+        "isError": True
+    }
