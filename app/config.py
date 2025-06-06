@@ -1,41 +1,34 @@
 # app/config.py
-
 import os
 from pathlib import Path
 import logging
 
-# --- Logging setup ---
-logging.basicConfig(
-    level=os.environ.get("LOGLEVEL", "INFO").upper(),
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger("mcp.config")
+from dotenv import load_dotenv
 
-# --- Server Configuration ---
-DEFAULT_SERVER_PORT = 8000  # Convention for MCP/FastAPI
+# Load environment variables from .env if present
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+DEFAULT_SERVER_PORT = 3000
 SERVER_PORT = int(os.environ.get("MCP_SERVER_PORT", DEFAULT_SERVER_PORT))
 logger.info(f"Server port configured to: {SERVER_PORT}")
 
-# --- Tools Base Directory ---
-DEFAULT_BASE_DIR = Path("/app/host_data")
-MCP_BASE_WORKING_DIR = Path(
-    os.environ.get("MCP_BASE_WORKING_DIR", str(DEFAULT_BASE_DIR))
-).resolve()
+DEFAULT_MCP_BASE_WORKING_DIR = "/app/host_data"
+MCP_BASE_WORKING_DIR_STR = os.environ.get("MCP_BASE_WORKING_DIR", DEFAULT_MCP_BASE_WORKING_DIR)
+MCP_BASE_WORKING_DIR = Path(MCP_BASE_WORKING_DIR_STR)
 
 try:
     MCP_BASE_WORKING_DIR.mkdir(parents=True, exist_ok=True)
-    # Try to make it accessible for container user (non-root)
-    if MCP_BASE_WORKING_DIR.exists():
-        os.chmod(MCP_BASE_WORKING_DIR, 0o750)
-    logger.info(f"MCP base working directory: {MCP_BASE_WORKING_DIR}")
+    logger.info(f"MCP base working directory: {MCP_BASE_WORKING_DIR.resolve()}")
 except Exception as e:
     logger.error(f"Could not create or access MCP base working directory {MCP_BASE_WORKING_DIR}: {e}")
-    # If this fails, file-system tools will also fail!
 
-# --- Security Configuration ---
-# For production, set via env: MCP_ALLOW_SHELL=0 to disable shell tool
-ALLOW_ARBITRARY_SHELL_COMMANDS = os.environ.get("MCP_ALLOW_SHELL", "1") == "1"
-if not ALLOW_ARBITRARY_SHELL_COMMANDS:
-    logger.warning("Shell command tool is DISABLED by config.")
+# --- API Keys ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+ALLOW_ARBITRARY_SHELL_COMMANDS = True
 
 logger.info("Configuration loaded.")

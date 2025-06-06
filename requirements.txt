@@ -8,10 +8,12 @@ fastapi>=0.110
 uvicorn[standard]>=0.23
 
 # Optional: Add your preferred LLM API SDKs here as you integrate (OpenAI, Gemini, etc.)
-openai>=1.23.0
+openai>=1.25.0
 google-generativeai>=0.4.1
 
 # Dev & utilities (if you want formatting/linting or testing)
 black
 isort
 pytest
+
+python-dotenv>=1.0.0

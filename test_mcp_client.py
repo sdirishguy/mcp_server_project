@@ -1,4 +1,5 @@
 # test_mcp_client.py
+
 import asyncio
 import json
 import logging
@@ -197,6 +198,30 @@ async def main_test_logic():
                 params_exec = {"command": safe_command}
                 response_exec_raw = await client.call_tool(name="execute_shell_command", arguments={"params": params_exec})
                 print_tool_call_summary("execute_shell_command (echo)", params_exec, MockToolCallResponse.from_sdk_response(response_exec_raw))
+
+                # --- OpenAI LLM Tool Call ---
+                llm_params_openai = {
+                    "prompt": "Write a Python function that returns Fibonacci numbers up to n.",
+                    "language": "python",
+                    "model": "gpt-4o",
+                    "temperature": 0.2,
+                    "max_tokens": 256,
+                }
+                llm_response_raw_openai = await client.call_tool(name="llm_generate_code_openai", arguments={"params": llm_params_openai})
+                print_tool_call_summary("llm_generate_code_openai", llm_params_openai, MockToolCallResponse.from_sdk_response(llm_response_raw_openai))
+
+                # --- Gemini LLM Tool Call ---
+                llm_params_gemini = {
+                    "prompt": "Write a Python function that sorts a list using bubble sort.",
+                    "language": "python",
+                    "model": "gemini-1.5-pro",
+                    "temperature": 0.2,
+                    "max_tokens": 256,
+                }
+                llm_response_raw_gemini = await client.call_tool(name="llm_generate_code_gemini", arguments={"params": llm_params_gemini})
+                print_tool_call_summary("llm_generate_code_gemini", llm_params_gemini, MockToolCallResponse.from_sdk_response(llm_response_raw_gemini))
+
+
 
     except ConnectionRefusedError:
         logger.error(f"Connection refused. Is the MCP server running at {MCP_FULL_ENDPOINT_URL}?")

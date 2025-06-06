@@ -33,3 +33,8 @@ EXPOSE 8000
 
 # Entrypoint: run the MCP server by default
 CMD ["python", "-m", "app.main"]
+
+
+# Commands to run file
+# docker build -t mcp-server .
+# docker run -it --rm -p 8000:8000 -v $PWD/host_data:/app/host_data mcp-server
