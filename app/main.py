@@ -9,7 +9,19 @@ from .tools import (
     execute_shell_command_tool,
     llm_generate_code_openai_tool,
     llm_generate_code_gemini_tool,
+    llm_generate_code_local_tool,
 )
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - SERVER - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("server_run.log", mode='a'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP("CodeGen & CyberOps MCP Server")
 
@@ -33,13 +45,26 @@ async def list_dir(params: dict) -> dict:
 async def exec_cmd(params: dict) -> dict:
     return await execute_shell_command_tool(params)
 
-@mcp.tool(name="llm_generate_code_openai", description="Generate code with OpenAI GPT.")
+@mcp.tool(
+    name="llm_generate_code_openai",
+    description="Generate code with OpenAI GPT. Params: prompt, language, model, system_prompt, max_tokens, temperature."
+)
 async def llm_code_openai(params: dict) -> dict:
     return await llm_generate_code_openai_tool(params)
 
-@mcp.tool(name="llm_generate_code_gemini", description="Generate code with Gemini.")
+@mcp.tool(
+    name="llm_generate_code_gemini",
+    description="Generate code with Gemini. Params: prompt, language, model, system_prompt, max_tokens, temperature."
+)
 async def llm_code_gemini(params: dict) -> dict:
     return await llm_generate_code_gemini_tool(params)
+
+@mcp.tool(
+    name="llm_generate_code_local",
+    description="(Placeholder) Generate code with a local LLM. Params: prompt, language, model, system_prompt, max_tokens, temperature."
+)
+async def llm_code_local(params: dict) -> dict:
+    return await llm_generate_code_local_tool(params)
 
 app = mcp.streamable_http_app()
 

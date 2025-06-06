@@ -11,8 +11,15 @@ import mcp.types
 from mcp import ClientSession, Tool, Resource
 
 # --- Logging Configuration ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - CLIENT - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - CLIENT - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f"client_run_{datetime.date.today()}.log", mode='a')
+        logging.StreamHandler()
+    ]
+)
+
 
 # --- Dynamic Type Resolution with Placeholders ---
 if TYPE_CHECKING:
@@ -221,6 +228,16 @@ async def main_test_logic():
                 llm_response_raw_gemini = await client.call_tool(name="llm_generate_code_gemini", arguments={"params": llm_params_gemini})
                 print_tool_call_summary("llm_generate_code_gemini", llm_params_gemini, MockToolCallResponse.from_sdk_response(llm_response_raw_gemini))
 
+                # --- Local LLM Tool Call (Placeholder) ---
+                llm_params_local = {
+                    "prompt": "Generate a bash script that lists all files in a directory.",
+                    "language": "bash",
+                    "model": "ollama:code",  # placeholder
+                    "temperature": 0.2,
+                    "max_tokens": 128,
+                }
+                llm_response_raw_local = await client.call_tool(name="llm_generate_code_local", arguments={"params": llm_params_local})
+                print_tool_call_summary("llm_generate_code_local", llm_params_local, MockToolCallResponse.from_sdk_response(llm_response_raw_local))
 
 
     except ConnectionRefusedError:

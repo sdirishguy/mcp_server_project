@@ -11,11 +11,14 @@ from .config import (
     ALLOW_ARBITRARY_SHELL_COMMANDS,
     OPENAI_API_KEY,
     GEMINI_API_KEY,
-    logger
+    logger,
 )
 
-# --- File system helpers ---
+DEFAULT_OPENAI_MODEL = "gpt-4o"
+DEFAULT_GEMINI_MODEL = "gemini-1.5-pro"
+LLM_API_RETRY_SECONDS = 5
 
+# --- Path helpers (unchanged) ---
 def _is_path_within_base(path_to_check: Path, base_path: Path) -> bool:
     try:
         return base_path == path_to_check or base_path in path_to_check.resolve().parents
@@ -31,8 +34,7 @@ def _resolve_and_verify_path(user_path_str: str) -> Path:
         raise ValueError(f"Path is outside the allowed base directory: {user_path_str}")
     return resolved_path
 
-# --- Tool Handlers ---
-
+# --- File/Dir/Shell Command Tools (keep these as before, unchanged) ---
 async def file_system_create_directory_tool(params: Dict[str, Any]) -> Dict[str, Any]:
     path_str = params.get("path")
     if not path_str or not isinstance(path_str, str):
@@ -120,91 +122,113 @@ async def execute_shell_command_tool(params: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"Error executing command '{command_str}': {e}", exc_info=True)
         return {"content": [{"type": "text", "text": f"Failed to execute command: {str(e)}"}], "isError": True}
 
-# --- LLM Tools ---
+# --- LLM TOOLS ---
 
-async def llm_generate_code_tool(params: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    params: {
-        "provider": "openai" | "gemini",
-        "prompt": str,
-        "language": str (optional, e.g., "python"),
-        "max_tokens": int (optional, default 256)
-    }
-    """
-    provider = params.get("provider", "openai").lower()
+async def llm_generate_code_openai_tool(params: Dict[str, Any]) -> Dict[str, Any]:
     prompt = params.get("prompt")
     language = params.get("language", "python")
+    model = params.get("model", DEFAULT_OPENAI_MODEL)
     max_tokens = params.get("max_tokens", 256)
+    temperature = params.get("temperature", 0.3)
+    system_prompt = params.get("system_prompt", f"You are a professional code generator. Generate clean, idiomatic {language} code. Respond only with code.")
+
+    if not OPENAI_API_KEY:
+        return {"content": [{"type": "text", "text": "OpenAI API key not set."}], "isError": True}
     if not prompt or not isinstance(prompt, str):
         return {"content": [{"type": "text", "text": "Missing or invalid 'prompt' parameter."}], "isError": True}
 
-    if provider == "openai":
-        if not OPENAI_API_KEY:
-            return {"content": [{"type": "text", "text": "OpenAI API key not set."}], "isError": True}
-        api_url = "https://api.openai.com/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
-        system_prompt = f"You are a professional code generator. Generate clean, idiomatic {language} code. Respond only with code."
-        data = {
-            "model": "gpt-4o",
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
-            "max_tokens": max_tokens,
-            "temperature": 0.3,
-        }
+    api_url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    data = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+
+    for attempt in range(2):
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(api_url, headers=headers, json=data)
+                if resp.status_code == 429:
+                    logger.warning("OpenAI quota exceeded (429 Too Many Requests). Retrying in %s seconds...", LLM_API_RETRY_SECONDS)
+                    if attempt == 0:
+                        await asyncio.sleep(LLM_API_RETRY_SECONDS)
+                        continue
+                    else:
+                        return {"content": [{"type": "text", "text": "OpenAI: API quota exceeded (429 Too Many Requests). Try again later."}], "isError": True}
                 resp.raise_for_status()
                 result = resp.json()
                 code_text = result["choices"][0]["message"]["content"]
                 return {"content": [{"type": "text", "text": code_text}]}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"OpenAI API error: {e.response.status_code} - {e.response.text}")
+            if e.response.status_code in (401, 403):
+                return {"content": [{"type": "text", "text": "OpenAI: Invalid or missing API key."}], "isError": True}
+            else:
+                return {"content": [{"type": "text", "text": f"OpenAI error: {e.response.status_code} - {e.response.text}"}], "isError": True}
         except Exception as e:
-            logger.error(f"OpenAI code generation error: {e}", exc_info=True)
+            logger.error(f"OpenAI error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": f"OpenAI error: {e}"}], "isError": True}
+    return {"content": [{"type": "text", "text": "OpenAI API call failed after retry."}], "isError": True}
 
-    elif provider == "gemini":
-        if not GEMINI_API_KEY:
-            return {"content": [{"type": "text", "text": "Gemini API key not set."}], "isError": True}
-        # Gemini 1.5-pro REST API format
-        api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={GEMINI_API_KEY}"
-        data = {
-            "contents": [
-                {"role": "user", "parts": [{"text": f"Generate {language} code for: {prompt}"}]}
-            ],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "temperature": 0.3,
-                "topP": 1.0,
-            }
+async def llm_generate_code_gemini_tool(params: Dict[str, Any]) -> Dict[str, Any]:
+    prompt = params.get("prompt")
+    language = params.get("language", "python")
+    model = params.get("model", DEFAULT_GEMINI_MODEL)
+    max_tokens = params.get("max_tokens", 256)
+    temperature = params.get("temperature", 0.3)
+    system_prompt = params.get("system_prompt", f"Generate clean, idiomatic {language} code. Respond only with code.")
+
+    if not GEMINI_API_KEY:
+        return {"content": [{"type": "text", "text": "Gemini API key not set."}], "isError": True}
+    if not prompt or not isinstance(prompt, str):
+        return {"content": [{"type": "text", "text": "Missing or invalid 'prompt' parameter."}], "isError": True}
+
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    data = {
+        "contents": [
+            {"role": "user", "parts": [{"text": f"{system_prompt}\n{prompt}"}]}
+        ],
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+            "topP": 1.0,
         }
+    }
+    for attempt in range(2):
         try:
             async with httpx.AsyncClient(timeout=60) as client:
                 resp = await client.post(api_url, json=data)
+                if resp.status_code == 429:
+                    logger.warning("Gemini quota exceeded (429 Too Many Requests). Retrying in %s seconds...", LLM_API_RETRY_SECONDS)
+                    if attempt == 0:
+                        await asyncio.sleep(LLM_API_RETRY_SECONDS)
+                        continue
+                    else:
+                        return {"content": [{"type": "text", "text": "Gemini: API quota exceeded (429 Too Many Requests). Try again later."}], "isError": True}
                 resp.raise_for_status()
                 result = resp.json()
                 code_text = result["candidates"][0]["content"]["parts"][0]["text"]
                 return {"content": [{"type": "text", "text": code_text}]}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Gemini API error: {e.response.status_code} - {e.response.text}")
+            if e.response.status_code in (401, 403):
+                return {"content": [{"type": "text", "text": "Gemini: Invalid or missing API key."}], "isError": True}
+            else:
+                return {"content": [{"type": "text", "text": f"Gemini error: {e.response.status_code} - {e.response.text}"}], "isError": True}
         except Exception as e:
-            logger.error(f"Gemini code generation error: {e}", exc_info=True)
+            logger.error(f"Gemini error: {e}", exc_info=True)
             return {"content": [{"type": "text", "text": f"Gemini error: {e}"}], "isError": True}
+    return {"content": [{"type": "text", "text": "Gemini API call failed after retry."}], "isError": True}
 
-    else:
-        return {"content": [{"type": "text", "text": f"Unknown LLM provider '{provider}'."}], "isError": True}
-
-        # --- Individual Provider MCP Tool Wrappers ---
-
-async def llm_generate_code_openai_tool(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Calls llm_generate_code_tool with provider 'openai'."""
-    params = dict(params)  # copy so we don't mutate input
-    params['provider'] = "openai"
-    return await llm_generate_code_tool(params)
-
-async def llm_generate_code_gemini_tool(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Calls llm_generate_code_tool with provider 'gemini'."""
-    params = dict(params)
-    params['provider'] = "gemini"
-    return await llm_generate_code_tool(params)
-
-
+async def llm_generate_code_local_tool(params: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "content": [
+            {"type": "text", "text": "Local LLM support coming soon! (Ollama, LM Studio, etc. will be integrated here.)"}
+        ],
+        "isError": False,
+    }
