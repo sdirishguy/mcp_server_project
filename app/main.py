@@ -1,72 +1,50 @@
 # app/main.py
 
-from mcp.server.fastmcp import FastMCP
-from .tools import (
-    file_system_create_directory_tool,
-    file_system_write_file_tool,
-    file_system_read_file_tool,
-    file_system_list_directory_tool,
-    execute_shell_command_tool,
-    llm_generate_code_openai_tool,
-    llm_generate_code_gemini_tool,
-    llm_generate_code_local_tool,
-)
+from fastmcp import FastMCP
+from starlette.applications import Starlette
+from starlette.routing import Mount
+from starlette.responses import JSONResponse
 import logging
+
+from app.tools import ALL_TOOLS
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - SERVER - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("server_run.log", mode='a'),
-        logging.StreamHandler()
-    ]
 )
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("CodeGen & CyberOps MCP Server")
+# 1. Set up FastMCP instance
+mcp = FastMCP("MCP Server", stateless_http=True)
 
-@mcp.tool(name="file_system_create_directory", description="Creates a directory.")
-async def create_dir(params: dict) -> dict:
-    return await file_system_create_directory_tool(params)
+# 2. Register all tools
+for tool in ALL_TOOLS:
+    mcp.tool(
+        name=tool["name"],
+        description=tool["description"]
+    )(tool["handler"])
+logger.info(f"Registered {len(ALL_TOOLS)} tools with FastMCP.")
 
-@mcp.tool(name="file_system_write_file", description="Writes a file.")
-async def write_file(params: dict) -> dict:
-    return await file_system_write_file_tool(params)
+# 3. Build the ASGI Starlette app with http_app (the modern way)
+#    (Change path="/mcp.json" if you prefer another URL, but match your client!)
+mcp_app = mcp.http_app(path="/mcp.json/")  # Path inside the sub-app
 
-@mcp.tool(name="file_system_read_file", description="Reads a file.")
-async def read_file(params: dict) -> dict:
-    return await file_system_read_file_tool(params)
+routes = [
+    Mount("/api", app=mcp_app),   # MCP endpoint = /api/mcp.json
+    # ... you can add other routes/mounts here if needed
+]
 
-@mcp.tool(name="file_system_list_directory", description="Lists directory contents.")
-async def list_dir(params: dict) -> dict:
-    return await file_system_list_directory_tool(params)
-
-@mcp.tool(name="execute_shell_command", description="Executes a shell command.")
-async def exec_cmd(params: dict) -> dict:
-    return await execute_shell_command_tool(params)
-
-@mcp.tool(
-    name="llm_generate_code_openai",
-    description="Generate code with OpenAI GPT. Params: prompt, language, model, system_prompt, max_tokens, temperature."
+# 4. Make sure to propagate the lifespan from mcp_app for background session mgmt!
+app = Starlette(
+    debug=True,
+    routes=routes,
+    lifespan=mcp_app.lifespan
 )
-async def llm_code_openai(params: dict) -> dict:
-    return await llm_generate_code_openai_tool(params)
 
-@mcp.tool(
-    name="llm_generate_code_gemini",
-    description="Generate code with Gemini. Params: prompt, language, model, system_prompt, max_tokens, temperature."
-)
-async def llm_code_gemini(params: dict) -> dict:
-    return await llm_generate_code_gemini_tool(params)
-
-@mcp.tool(
-    name="llm_generate_code_local",
-    description="(Placeholder) Generate code with a local LLM. Params: prompt, language, model, system_prompt, max_tokens, temperature."
-)
-async def llm_code_local(params: dict) -> dict:
-    return await llm_generate_code_local_tool(params)
-
-app = mcp.streamable_http_app()
+# 5. Extra: Healthcheck route
+@app.route("/health")
+async def health(request):
+    return JSONResponse({"status": "ok", "message": "MCP Server is running!"})
 
 if __name__ == "__main__":
     import uvicorn
