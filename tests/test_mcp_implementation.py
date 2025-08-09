@@ -1,4 +1,10 @@
-# tests/test_mcp_implementation.py
+"""Integration tests for MCP server implementation.
+
+This module contains end-to-end tests that verify the MCP server's core
+functionality including health checks, authentication, adapter management,
+and caching behavior.
+"""
+
 import logging
 import os
 import time
@@ -20,6 +26,7 @@ def _headers(token: str | None) -> dict:
 
 @pytest.mark.anyio
 async def test_health_check(http_client: httpx.AsyncClient):
+    """Test that the health check endpoint returns a successful status."""
     resp = await http_client.get(f"{BASE_URL}/health", timeout=10)
     assert resp.status_code == 200
     data = resp.json()
@@ -28,6 +35,11 @@ async def test_health_check(http_client: httpx.AsyncClient):
 
 @pytest.mark.anyio
 async def test_authentication(token: str | None, http_client: httpx.AsyncClient):
+    """Test authentication functionality by accessing a protected endpoint.
+
+    Expects either successful access (200), unauthorized (401),
+    or not found (404) depending on the server configuration.
+    """
     # If no auth is configured, expect 200/401/404 depending on your app
     resp = await http_client.get(
         f"{BASE_URL}/api/profile",
@@ -39,6 +51,7 @@ async def test_authentication(token: str | None, http_client: httpx.AsyncClient)
 
 @pytest.mark.anyio
 async def test_audit_logging(token: str | None, http_client: httpx.AsyncClient):
+    """Test that audit logging is working by making a logged request."""
     resp = await http_client.get(
         f"{BASE_URL}/health",
         headers=_headers(token),
@@ -49,6 +62,11 @@ async def test_audit_logging(token: str | None, http_client: httpx.AsyncClient):
 
 @pytest.mark.anyio
 async def test_adapter_creation(token: str | None, http_client: httpx.AsyncClient):
+    """Test creating a REST API adapter instance.
+
+    Verifies that the adapter creation endpoint is accessible and returns
+    the expected response format with an instance_id.
+    """
     # Ensure the endpoint is reachable and returns a plausible shape
     rest_cfg = {
         "name": "test-rest-adapter-inline",
@@ -74,6 +92,11 @@ async def test_adapter_execution(
     instance_id: str | None,
     http_client: httpx.AsyncClient,
 ):
+    """Test executing a query through a created adapter instance.
+
+    Skips if no adapter instance is available. Tests the adapter execution
+    endpoint with a simple GET request.
+    """
     if instance_id is None:
         pytest.skip("No adapter instance available")
 
@@ -92,6 +115,11 @@ async def test_caching(
     instance_id: str | None,
     http_client: httpx.AsyncClient,
 ):
+    """Test that caching is working by comparing response times and results.
+
+    Makes two identical requests and verifies that the second request
+    returns the same result (and potentially faster due to caching).
+    """
     if instance_id is None:
         pytest.skip("No adapter instance available")
 

@@ -1,10 +1,15 @@
-# tests/conftest.py
+"""Test configuration and fixtures for MCP server tests.
+
+This module provides pytest fixtures and utilities for testing the MCP server
+functionality, including HTTP client setup, authentication token handling,
+and adapter instance management.
+"""
+
 import logging
 import os
 
 import httpx
 import pytest
-import pytest_asyncio
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -33,35 +38,55 @@ async def _try_get_token(client: httpx.AsyncClient) -> str | None:
                 resp = await client.post(url, json=body, timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
-                    token = data.get("token") or data.get("access_token")
-                    if token:
+                    auth_token = data.get("token") or data.get("access_token")
+                    if auth_token:
                         logger.info("Obtained auth token from %s", path)
-                        return token
-            except Exception:
+                        return auth_token
+            except (httpx.RequestError, httpx.HTTPStatusError):
                 # Quietly try next option
                 pass
     logger.info("No auth endpoint found; proceeding without Authorization header.")
     return None
 
 
-@pytest_asyncio.fixture(scope="function")
+@pytest.fixture(scope="function")
 async def http_client():
+    """Provide an httpx AsyncClient for making HTTP requests in tests."""
     async with httpx.AsyncClient() as client:
         yield client
 
 
-@pytest_asyncio.fixture(scope="function")
-async def token(http_client: httpx.AsyncClient) -> str | None:
+@pytest.fixture(scope="function")
+async def token(
+    http_client: httpx.AsyncClient,  # pylint: disable=redefined-outer-name
+) -> str | None:
+    """Attempt to obtain an authentication token from the server.
+
+    Tries multiple common auth endpoints with test credentials.
+    Returns None if no authentication endpoint is available.
+    """
     return await _try_get_token(http_client)
 
 
-@pytest_asyncio.fixture(scope="function")
-async def instance_id(http_client: httpx.AsyncClient, token: str | None) -> str | None:
+@pytest.fixture(scope="function")
+async def instance_id(
+    http_client: httpx.AsyncClient,  # pylint: disable=redefined-outer-name
+    token: str | None,  # pylint: disable=redefined-outer-name
+) -> str | None:
+    """Create a test REST API adapter instance and return its ID.
+
+    Creates an adapter configured to use httpbin.org for testing.
+    Skips the test if adapter creation fails or is not supported.
+
+    Returns:
+        The instance ID of the created adapter, or None if creation failed.
+
+    """
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     create_url = f"{BASE_URL}/api/adapters/rest_api"
     try:
         resp = await http_client.post(create_url, headers=headers, json=REST_API_CONFIG, timeout=15)
-    except Exception as e:
+    except (httpx.RequestError, httpx.HTTPStatusError) as e:
         pytest.skip(f"Adapter creation endpoint not reachable: {e}")
 
     if resp.status_code != 200:
