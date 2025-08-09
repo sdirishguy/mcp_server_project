@@ -1,24 +1,45 @@
-# --- Formatting ---
 [tool.black]
 line-length = 100
 target-version = ["py312"]
+extend-exclude = '''
+^(
+  package_control_channel/|
+  \.venv/|
+  build/|
+  dist/|
+  node_modules/|
+  .*/migrations/
+)
+'''
 
-# --- Ruff (linter) ---
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_glob = [
+  "package_control_channel/**",
+  ".venv/**",
+  "build/**",
+  "dist/**",
+  "node_modules/**",
+]
+
 [tool.ruff]
 line-length = 100
+target-version = "py312"
 extend-exclude = [
-  "tests/test_mcp_client_legacy.py",
+  "package_control_channel/**",
+  ".venv/**",
+  "build/**",
+  "dist/**",
+  "node_modules/**",
+  "*/migrations/**",
 ]
 
 [tool.ruff.lint]
-# Keep the defaults, but you can add/adjust rules here.
-select = ["E", "F", "W", "UP"]  # pycodestyle/pyflakes/warnings/pyupgrade
-ignore = []
-
-# --- Pytest config (marks, paths, etc.) ---
-[tool.pytest.ini_options]
-addopts = "-q"
-testpaths = ["tests"]
-markers = [
-  "anyio",  # allow @pytest.mark.anyio without warnings
+select = ["E", "F", "I", "UP"]
+ignore = [
+  "UP046",  # Keep Generic[...] for compatibility with Python < 3.12 (PEP 695 not available)
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

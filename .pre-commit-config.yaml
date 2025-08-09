@@ -1,27 +1,59 @@
-repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
+# Run formatting and linting only on our project code, not vendor/venv/etc.
+default_language_version:
+  python: python3.12
 
+repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.12.8
     hooks:
       - id: ruff
         args: [--fix]
+        exclude: >
+          ^(
+            package_control_channel/|
+            \.venv/|
+            build/|
+            dist/|
+            node_modules/|
+            .*/migrations/
+          )
       - id: ruff-format
+        exclude: >
+          ^(
+            package_control_channel/|
+            \.venv/|
+            build/|
+            dist/|
+            node_modules/|
+            .*/migrations/
+          )
+
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+        args: ["--line-length", "100"]
+        exclude: >
+          ^(
+            package_control_channel/|
+            \.venv/|
+            build/|
+            dist/|
+            node_modules/|
+            .*/migrations/
+          )
 
   - repo: https://github.com/pycqa/isort
     rev: 6.0.1
     hooks:
       - id: isort
-
-# >>> Add this block at the bottom <<<
-# Apply to all hooks: skip virtualenvs, third-party channel repo, and any site-packages copies
-exclude: |
-  (?x)^(
-    \.venv/|
-    venv/|
-    .*site-packages/|
-    package_control_channel/
-  )
+        args: ["--profile", "black", "--line-length", "100"]
+        exclude: >
+          ^(
+            package_control_channel/|
+            \.venv/|
+            build/|
+            dist/|
+            node_modules/|
+            .*/migrations/
+          )

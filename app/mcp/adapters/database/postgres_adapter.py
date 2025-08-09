@@ -7,8 +7,13 @@ This module provides an adapter for connecting to PostgreSQL databases.
 import asyncio
 from typing import Any
 
-from ...core.adapter import (AdapterCapability, AdapterMetadata, DataRequest,
-                             DataResponse, MCPAdapter)
+from ...core.adapter import (
+    AdapterCapability,
+    AdapterMetadata,
+    DataRequest,
+    DataResponse,
+    MCPAdapter,
+)
 
 
 class PostgreSQLAdapter(MCPAdapter):

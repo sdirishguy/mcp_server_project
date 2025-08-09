@@ -6,8 +6,13 @@ This module provides an adapter for connecting to REST APIs.
 
 from typing import Any
 
-from ...core.adapter import (AdapterCapability, AdapterMetadata, DataRequest,
-                             DataResponse, MCPAdapter)
+from ...core.adapter import (
+    AdapterCapability,
+    AdapterMetadata,
+    DataRequest,
+    DataResponse,
+    MCPAdapter,
+)
 
 
 class RestApiAdapter(MCPAdapter):

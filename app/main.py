@@ -21,17 +21,22 @@ from starlette.routing import Mount, Route
 from app.mcp.adapters.api.rest_api_adapter import RestApiAdapter
 from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
+
 # --- MCP component imports ---
 from app.mcp.core.adapter import AdapterManager, AdapterRegistry
-from app.mcp.security.audit.audit_logging import (AuditEvent,
-                                                  AuditEventOutcome,
-                                                  AuditEventType,
-                                                  create_default_audit_logger)
-from app.mcp.security.auth.authentication import (AuthenticationManager,
-                                                  InMemoryAuthProvider)
-from app.mcp.security.auth.authorization import (Action, AuthorizationManager,
-                                                 ResourceType,
-                                                 create_admin_role)
+from app.mcp.security.audit.audit_logging import (
+    AuditEvent,
+    AuditEventOutcome,
+    AuditEventType,
+    create_default_audit_logger,
+)
+from app.mcp.security.auth.authentication import AuthenticationManager, InMemoryAuthProvider
+from app.mcp.security.auth.authorization import (
+    Action,
+    AuthorizationManager,
+    ResourceType,
+    create_admin_role,
+)
 from app.tools import ALL_TOOLS
 
 logger = logging.getLogger(__name__)

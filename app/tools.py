@@ -15,8 +15,13 @@ from typing import Any
 
 import httpx
 
-from .config import (ALLOW_ARBITRARY_SHELL_COMMANDS, GEMINI_API_KEY,
-                     MCP_BASE_WORKING_DIR, OPENAI_API_KEY, logger)
+from .config import (
+    ALLOW_ARBITRARY_SHELL_COMMANDS,
+    GEMINI_API_KEY,
+    MCP_BASE_WORKING_DIR,
+    OPENAI_API_KEY,
+    logger,
+)
 
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")

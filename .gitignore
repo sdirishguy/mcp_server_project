@@ -1,196 +1,34 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
+# Virtual envs
+.venv/
+.env/
 .python-version
 
-# pipenv
-#Pipfile.lock
-
-# UV
-#uv.lock
-
-# poetry
-#poetry.lock
-
-# pdm
-.pdm.toml
-.pdm-python
-.pdm-build/
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv/
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
 .mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm / VSCode / Sublime / JetBrains
-.vscode/
-.idea/
-*.sublime-workspace
-*.sublime-project
-
-# Ruff linter
+.pytest_cache/
 .ruff_cache/
 
-# PyPI configuration file
-.pypirc
+# Coverage / reports
+.coverage
+coverage.xml
+htmlcov/
 
-# --- Project-specific ignores ---
-# Logs and build output
-*.log
-build_log.txt
-server_run.log
+# Build / dist
+build/
+dist/
+*.egg-info/
 
-# Output/runtime folders
-shared_host_folder/
-
-# Test cache/bytecode
-tests/__pycache__/
-tests/*.pyc
-
-# MacOS metadata
+# Editors/OS
 .DS_Store
+.idea/
+.vscode/
 
-# (Optional) Add your own secret/config files here
+# Node/Yarn (if any)
+node_modules/
 
-# Archives & export artifacts
-*.zip
-*.7z
-*.tar
-*.tar.gz
-
-# Backup files
-*.bak
-*.backup
-
-# Local audit/security logs
-audit.log
-audit_*.log
-
-# Local database/data dumps
-*.sqlite
-*.sqlite3
-*.db
-*.db-journal
-*.sql
-
-# If you ever cache AI responses or store temp data
-cache/
-tmp/
+# Logs
+*.log
+.env

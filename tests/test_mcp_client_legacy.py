@@ -1,4 +1,8 @@
-# test_mcp_client.py
+"""Legacy MCP client test module.
+
+This module provides comprehensive testing for the Model Context Protocol (MCP) client
+functionality, including dynamic type resolution, tool calling, and server communication.
+"""
 
 import asyncio
 import datetime
@@ -24,6 +28,59 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# --- Placeholder Classes (defined globally) ---
+class PlaceholderContent:
+    """Placeholder for mcp.types.Content when not available."""
+
+    def __init__(self, content_type, data):
+        """Initialize placeholder content.
+
+        Args:
+            content_type: The type of content
+            data: The content data
+        """
+        self.type = content_type
+        self.data = data
+
+
+class PlaceholderContentType:
+    """Placeholder for mcp.types.ContentType when not available."""
+
+    TEXT = "text"
+    JSON = "json"
+    IMAGE = "image"
+
+
+class PlaceholderErrorData:
+    """Placeholder for mcp.types.ErrorData when not available."""
+
+    def __init__(self, code, message, data=None):
+        """Initialize placeholder error data.
+
+        Args:
+            code: Error code
+            message: Error message
+            data: Optional additional error data
+        """
+        self.code = code
+        self.message = message
+        self.data = data
+
+
+class PlaceholderCallToolResult:
+    """Placeholder for mcp.types.CallToolResult when not available."""
+
+    def __init__(self, results=None, error=None):
+        """Initialize placeholder call tool result.
+
+        Args:
+            results: Tool call results
+            error: Tool call error if any
+        """
+        self.results = results
+        self.error = error
+
+
 # --- Dynamic Type Resolution with Placeholders ---
 if TYPE_CHECKING:
     _Content = mcp.types.Content
@@ -31,28 +88,6 @@ if TYPE_CHECKING:
     _ErrorData = mcp.types.ErrorData
     _CallToolResult = mcp.types.CallToolResult
 else:
-
-    class PlaceholderContent:
-        def __init__(self, type, data):
-            self.type = type
-            self.data = data
-
-    class PlaceholderContentType:
-        TEXT = "text"
-        JSON = "json"
-        IMAGE = "image"
-
-    class PlaceholderErrorData:
-        def __init__(self, code, message, data=None):
-            self.code = code
-            self.message = message
-            self.data = data
-
-    class PlaceholderCallToolResult:
-        def __init__(self, results=None, error=None):
-            self.results = results
-            self.error = error
-
     _Content = getattr(mcp.types, "Content", None)
     if _Content is None:
         logger.warning(
@@ -60,12 +95,13 @@ else:
         )
         _Content = PlaceholderContent
 
-    _ContentType = getattr(mcp.types, "ContentType", None)
-    if _ContentType is None:
+    CONTENT_TYPE = getattr(mcp.types, "ContentType", None)
+    if CONTENT_TYPE is None:
         logger.warning(
             "Client: Could not resolve mcp.types.ContentType via getattr, using placeholder."
         )
-        _ContentType = PlaceholderContentType
+        CONTENT_TYPE = PlaceholderContentType
+    _ContentType = CONTENT_TYPE
 
     _ErrorData = getattr(mcp.types, "ErrorData", None)
     if _ErrorData is None:
@@ -79,6 +115,7 @@ else:
         )
         _CallToolResult = PlaceholderCallToolResult
 
+
 # --- Server Configuration ---
 SERVER_BASE_URL = "http://localhost:8000"
 MCP_FULL_ENDPOINT_URL = f"{SERVER_BASE_URL}/mcp"
@@ -86,6 +123,8 @@ MCP_FULL_ENDPOINT_URL = f"{SERVER_BASE_URL}/mcp"
 
 # --- Mock Response and Print Helper ---
 class MockToolCallResponse:
+    """Mock response wrapper for tool call results."""
+
     def __init__(
         self,
         results: list[_Content] | None = None,
@@ -98,9 +137,18 @@ class MockToolCallResponse:
 
     @classmethod
     def from_sdk_response(cls, sdk_response_obj):
+        """Create MockToolCallResponse from SDK response object.
+
+        Args:
+            sdk_response_obj: The response object from the SDK
+
+        Returns:
+            MockToolCallResponse: Parsed response wrapper
+        """
         if not all([_Content, _ErrorData, _ContentType, _CallToolResult]):
             logger.error(
-                "Client: Core types for response parsing not resolved or are placeholders. Parsing may be basic/unreliable."
+                "Client: Core types for response parsing not resolved or are "
+                "placeholders. Parsing may be basic/unreliable."
             )
 
         if hasattr(sdk_response_obj, "results") and hasattr(sdk_response_obj, "error"):
@@ -178,7 +226,8 @@ class MockToolCallResponse:
             )
 
         logger.warning(
-            f"SDK response format not directly parseable: {type(sdk_response_obj)}. Storing as raw."
+            "SDK response format not directly parseable: %s. Storing as raw.",
+            type(sdk_response_obj),
         )
         return cls(raw_response={"unknown_response_format": str(sdk_response_obj)})
 
@@ -186,13 +235,20 @@ class MockToolCallResponse:
 def print_tool_call_summary(
     tool_name: str, params: dict[str, Any], response_wrapper: MockToolCallResponse
 ):
-    logger.info(f"--- Calling Tool: {tool_name} ---")
-    logger.info(f"Params: {json.dumps(params)}")
+    """Print a summary of a tool call and its response.
+
+    Args:
+        tool_name: Name of the tool that was called
+        params: Parameters passed to the tool
+        response_wrapper: Wrapped response from the tool call
+    """
+    logger.info("--- Calling Tool: %s ---", tool_name)
+    logger.info("Params: %s", json.dumps(params))
     if response_wrapper.error:
-        logger.error(f"Error Code: {getattr(response_wrapper.error, 'code', 'N/A')}")
-        logger.error(f"Error Message: {getattr(response_wrapper.error, 'message', 'N/A')}")
+        logger.error("Error Code: %s", getattr(response_wrapper.error, "code", "N/A"))
+        logger.error("Error Message: %s", getattr(response_wrapper.error, "message", "N/A"))
         if hasattr(response_wrapper.error, "data") and response_wrapper.error.data:
-            logger.error(f"Error Data: {response_wrapper.error.data}")
+            logger.error("Error Data: %s", response_wrapper.error.data)
     elif response_wrapper.results:
         logger.info("Results:")
         for content_item in response_wrapper.results:
@@ -202,11 +258,12 @@ def print_tool_call_summary(
                 if hasattr(content_type_val, "value") and not isinstance(content_type_val, str)
                 else str(content_type_val)
             )
-            logger.info(f"  - Type: {content_type_str}")
-            logger.info(f"    Data: {str(getattr(content_item, 'data', 'N/A'))[:200]}")
-    elif response_wrapper._raw_response:
+            logger.info("  - Type: %s", content_type_str)
+            logger.info("    Data: %s", str(getattr(content_item, "data", "N/A"))[:200])
+    elif getattr(response_wrapper, "_raw_response", None):  # pylint: disable=protected-access
         logger.info(
-            f"Raw Response (could not parse into known structure): {json.dumps(response_wrapper._raw_response, indent=2)}"
+            "Raw Response (could not parse into known structure): %s",
+            json.dumps(getattr(response_wrapper, "_raw_response"), indent=2),
         )
     else:
         logger.warning("No results or error in response, and no raw data found.")
@@ -215,6 +272,7 @@ def print_tool_call_summary(
 
 # --- Main Test Logic ---
 async def main_test_logic():
+    """Main test logic for MCP client functionality."""
     if _Content is PlaceholderContent:
         logger.warning("Client is using placeholder for Content type.")
     if _ContentType is PlaceholderContentType:
@@ -225,10 +283,11 @@ async def main_test_logic():
         )
     if _CallToolResult is PlaceholderCallToolResult:
         logger.error(
-            "CRITICAL: Client using placeholder for CallToolResult. Tool call result parsing may be basic."
+            "CRITICAL: Client using placeholder for CallToolResult. "
+            "Tool call result parsing may be basic."
         )
 
-    logger.info(f"Attempting to establish MCP stream connection to {MCP_FULL_ENDPOINT_URL}...")
+    logger.info("Attempting to establish MCP stream connection to %s...", MCP_FULL_ENDPOINT_URL)
     try:
         async with streamablehttp_client(MCP_FULL_ENDPOINT_URL) as (
             read_stream,
@@ -241,11 +300,13 @@ async def main_test_logic():
                     status_code_to_log = initial_http_response_or_other.status_code
                 else:
                     logger.info(
-                        f"Stream conn: Third yielded item type: {type(initial_http_response_or_other)}, value: {str(initial_http_response_or_other)[:100]}"
+                        "Stream conn: Third yielded item type: %s, value: %s",
+                        type(initial_http_response_or_other),
+                        str(initial_http_response_or_other)[:100],
                     )
 
             if status_code_to_log != "N/A":
-                logger.info(f"Stream conn: Initial HTTP status: {status_code_to_log}")
+                logger.info("Stream conn: Initial HTTP status: %s", status_code_to_log)
             else:
                 logger.info("Stream conn established (status code N/A from third yielded item).")
 
@@ -253,18 +314,21 @@ async def main_test_logic():
                 logger.info("ClientSession created. Attempting to initialize...")
                 initialize_response = await client.initialize()
                 logger.info(
-                    f"Successfully initialized with server. Server capabilities: {initialize_response}"
+                    "Successfully initialized with server. Server capabilities: %s",
+                    initialize_response,
                 )
 
                 available_tools_raw = await client.list_tools()
-                logger.info(f"Raw response from list_tools: {available_tools_raw}")
+                logger.info("Raw response from list_tools: %s", available_tools_raw)
                 if hasattr(available_tools_raw, "tools"):
                     for tool_instance in available_tools_raw.tools:
                         logger.info(
-                            f"  - Discovered Tool: Name={tool_instance.name}, Desc={tool_instance.description}"
+                            "  - Discovered Tool: Name=%s, Desc=%s",
+                            tool_instance.name,
+                            tool_instance.description,
                         )
                         if hasattr(tool_instance, "inputSchema"):
-                            logger.info(f"    Schema: {tool_instance.inputSchema}")
+                            logger.info("    Schema: %s", tool_instance.inputSchema)
                 else:
                     logger.warning("No tools listed or unexpected format.")
 
@@ -377,13 +441,15 @@ async def main_test_logic():
                 )
 
     except ConnectionRefusedError:
-        logger.error(f"Connection refused. Is the MCP server running at {MCP_FULL_ENDPOINT_URL}?")
-    except httpx.ConnectError as e:
+        logger.error("Connection refused. Is the MCP server running at %s?", MCP_FULL_ENDPOINT_URL)
+    except httpx.ConnectError as connect_error:
         logger.error(
-            f"HTTPX ConnectError to {MCP_FULL_ENDPOINT_URL}: {e}. Is server URL correct & server running?"
+            "HTTPX ConnectError to %s: %s. Is server URL correct & server running?",
+            MCP_FULL_ENDPOINT_URL,
+            connect_error,
         )
-    except Exception as e:
-        logger.error(f"An error occurred during client operations: {e}", exc_info=True)
+    except Exception as general_error:  # pylint: disable=broad-exception-caught
+        logger.error("An error occurred during client operations: %s", general_error, exc_info=True)
 
 
 if __name__ == "__main__":
