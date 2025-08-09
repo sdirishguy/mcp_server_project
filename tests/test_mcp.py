@@ -5,11 +5,11 @@ payload = {
     "jsonrpc": "2.0",
     "method": "file_system_create_directory",
     "params": {"path": "tmp/newdir"},
-    "id": 1
+    "id": 1,
 }
 headers = {
     "Content-Type": "application/json",
-    "Accept": "application/json, text/event-stream"  # <---- BOTH!
+    "Accept": "application/json, text/event-stream",  # <---- BOTH!
 }
 
 resp = requests.post(url, json=payload, headers=headers)

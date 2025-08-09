@@ -170,3 +170,27 @@ tests/*.pyc
 
 # (Optional) Add your own secret/config files here
 
+# Archives & export artifacts
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# Backup files
+*.bak
+*.backup
+
+# Local audit/security logs
+audit.log
+audit_*.log
+
+# Local database/data dumps
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.sql
+
+# If you ever cache AI responses or store temp data
+cache/
+tmp/

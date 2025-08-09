@@ -1,4 +1,3 @@
-
 """
 PostgreSQL adapter for the Model Context Protocol (MCP).
 
@@ -6,50 +5,50 @@ This module provides an adapter for connecting to PostgreSQL databases.
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ...core.adapter import (
-    MCPAdapter,
     AdapterCapability,
     AdapterMetadata,
     DataRequest,
     DataResponse,
+    MCPAdapter,
 )
 
 
 class PostgreSQLAdapter(MCPAdapter):
     """Adapter for PostgreSQL databases."""
-    
+
     def __init__(self):
         """Initialize the PostgreSQL adapter."""
         self._pool = None
         self._config = None
-    
-    async def initialize(self, config: Dict[str, Any]) -> bool:
+
+    async def initialize(self, config: dict[str, Any]) -> bool:
         """Initialize the adapter with configuration parameters.
-        
+
         Args:
             config: Configuration parameters for the adapter
-            
+
         Returns:
             bool: True if initialization was successful, False otherwise
         """
         try:
             self._config = config
-            
+
             # In a real implementation, we would use asyncpg to create a connection pool
             # For this example, we'll simulate the connection
-            
+
             # Simulate connection delay
             await asyncio.sleep(0.1)
-            
+
             # Check required config parameters
             required_params = ["host", "port", "user", "password", "database"]
             for param in required_params:
                 if param not in config:
                     print(f"Missing required parameter: {param}")
                     return False
-            
+
             # Simulate successful connection
             self._pool = {
                 "connected": True,
@@ -60,15 +59,15 @@ class PostgreSQLAdapter(MCPAdapter):
                 "min_size": config.get("min_connections", 1),
                 "max_size": config.get("max_connections", 10),
             }
-            
+
             return True
         except Exception as e:
             print(f"Failed to initialize PostgreSQL adapter: {e}")
             return False
-    
+
     async def get_metadata(self) -> AdapterMetadata:
         """Return metadata about this adapter's capabilities.
-        
+
         Returns:
             AdapterMetadata: Metadata about the adapter
         """
@@ -84,13 +83,13 @@ class PostgreSQLAdapter(MCPAdapter):
             schema_supported=True,
             authentication_required=True,
         )
-    
+
     async def execute(self, request: DataRequest) -> DataResponse:
         """Execute a data request against this adapter.
-        
+
         Args:
             request: The data request to execute
-            
+
         Returns:
             DataResponse: The response from the data source
         """
@@ -101,16 +100,16 @@ class PostgreSQLAdapter(MCPAdapter):
                     status_code=500,
                     error="Database connection not initialized",
                 )
-            
+
             # In a real implementation, we would use asyncpg to execute the query
             # For this example, we'll simulate the query execution
-            
+
             # Simulate query execution delay
             await asyncio.sleep(0.05)
-            
+
             # Parse the query to determine the type of operation
             query = request.query.strip().upper()
-            
+
             if query.startswith("SELECT"):
                 # Simulate a SELECT query
                 if "USERS" in query:
@@ -128,13 +127,17 @@ class PostgreSQLAdapter(MCPAdapter):
                 else:
                     # Generic result
                     data = [{"result": "Simulated query result"}]
-                
+
                 return DataResponse(
                     data=data,
                     metadata={"row_count": len(data)},
                     status_code=200,
                 )
-            elif query.startswith("INSERT") or query.startswith("UPDATE") or query.startswith("DELETE"):
+            elif (
+                query.startswith("INSERT")
+                or query.startswith("UPDATE")
+                or query.startswith("DELETE")
+            ):
                 # Simulate a write operation
                 return DataResponse(
                     data={"affected_rows": 1},
@@ -152,23 +155,23 @@ class PostgreSQLAdapter(MCPAdapter):
                 status_code=500,
                 error=str(e),
             )
-    
+
     async def health_check(self) -> bool:
         """Check if the adapter is functioning properly.
-        
+
         Returns:
             bool: True if the adapter is healthy, False otherwise
         """
         try:
             if not self._pool or not self._pool["connected"]:
                 return False
-            
+
             # In a real implementation, we would execute a simple query
             # For this example, we'll just check if the pool is connected
             return self._pool["connected"]
         except Exception:
             return False
-    
+
     async def shutdown(self) -> None:
         """Clean up resources when shutting down."""
         if self._pool and self._pool["connected"]:

@@ -1,0 +1,24 @@
+# --- Formatting ---
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+# --- Ruff (linter) ---
+[tool.ruff]
+line-length = 100
+extend-exclude = [
+  "tests/test_mcp_client_legacy.py",
+]
+
+[tool.ruff.lint]
+# Keep the defaults, but you can add/adjust rules here.
+select = ["E", "F", "W", "UP"]  # pycodestyle/pyflakes/warnings/pyupgrade
+ignore = []
+
+# --- Pytest config (marks, paths, etc.) ---
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+markers = [
+  "anyio",  # allow @pytest.mark.anyio without warnings
+]
