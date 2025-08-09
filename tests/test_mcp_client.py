@@ -1,4 +1,3 @@
-import asyncio
 import datetime as _dt
 import json
 import logging
@@ -86,7 +85,7 @@ async def test_health_endpoint_latency_under_threshold():
     start = _dt.datetime.now()
     async with httpx.AsyncClient(base_url=BASE_URL) as client:
         await client.get(HEALTH_PATH, timeout=REQUEST_TIMEOUT)
-    elapsed_ms = ( _dt.datetime.now() - start ).total_seconds() * 1000.0
+    elapsed_ms = (_dt.datetime.now() - start).total_seconds() * 1000.0
 
     LOG.info("Health latency: %.2f ms", elapsed_ms)
     # Conservative threshold you can tighten later.

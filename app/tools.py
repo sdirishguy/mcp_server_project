@@ -15,13 +15,8 @@ from typing import Any
 
 import httpx
 
-from .config import (
-    ALLOW_ARBITRARY_SHELL_COMMANDS,
-    GEMINI_API_KEY,
-    MCP_BASE_WORKING_DIR,
-    OPENAI_API_KEY,
-    logger,
-)
+from .config import (ALLOW_ARBITRARY_SHELL_COMMANDS, GEMINI_API_KEY,
+                     MCP_BASE_WORKING_DIR, OPENAI_API_KEY, logger)
 
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
@@ -44,7 +39,7 @@ async def file_system_create_directory_tool(path: str) -> dict[str, Any]:
         target_path = _resolve_and_verify_path(path)
         target_path.mkdir(parents=True, exist_ok=True)
         return {"content": [{"type": "text", "text": f"Directory '{path}' created."}]}
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error creating directory '%s': %s", path, e, exc_info=True)
         return {
             "content": [{"type": "text", "text": f"Failed to create directory: {e}"}],
@@ -59,7 +54,7 @@ async def file_system_write_file_tool(path: str, content: str) -> dict[str, Any]
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(content, encoding="utf-8")
         return {"content": [{"type": "text", "text": f"File '{path}' written successfully."}]}
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error writing file '%s': %s", path, e, exc_info=True)
         return {
             "content": [{"type": "text", "text": f"Failed to write file: {e}"}],
@@ -75,7 +70,7 @@ async def file_system_read_file_tool(path: str) -> dict[str, Any]:
             return {"content": [{"type": "text", "text": "File not found."}], "isError": True}
         content_read = target_path.read_text(encoding="utf-8")
         return {"content": [{"type": "text", "text": content_read}]}
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error reading file '%s': %s", path, e, exc_info=True)
         return {"content": [{"type": "text", "text": f"Failed to read file: {e}"}], "isError": True}
 
@@ -92,7 +87,7 @@ async def file_system_list_directory_tool(path: str | None = ".") -> dict[str, A
         if not items:
             return {"content": [{"type": "text", "text": f"Directory '{path}' is empty."}]}
         return {"content": [{"type": "text", "text": json.dumps(items)}]}
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error listing directory '%s': %s", path, e, exc_info=True)
         return {
             "content": [{"type": "text", "text": f"Failed to list directory: {e}"}],
@@ -143,7 +138,7 @@ async def execute_shell_command_tool(
             "return_code": proc.returncode,
         }
         return {"content": [{"type": "text", "text": json.dumps(results_data, indent=2)}]}
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error("Error executing command '%s': %s", command, e, exc_info=True)
         return {
             "content": [{"type": "text", "text": f"Failed to execute command: {e}"}],
@@ -194,12 +189,12 @@ async def llm_generate_code_openai_tool(
                 "content": [
                     {
                         "type": "text",
-                        "text": (f"OpenAI error: {e.response.status_code} - " f"{e.response.text}"),
+                        "text": (f"OpenAI error: {e.response.status_code} - {e.response.text}"),
                     }
                 ],
                 "isError": True,
             }
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("OpenAI error: %s", e, exc_info=True)
             return {"content": [{"type": "text", "text": f"OpenAI error: {e}"}], "isError": True}
 
@@ -241,12 +236,12 @@ async def llm_generate_code_gemini_tool(
                 "content": [
                     {
                         "type": "text",
-                        "text": (f"Gemini error: {e.response.status_code} - " f"{e.response.text}"),
+                        "text": (f"Gemini error: {e.response.status_code} - {e.response.text}"),
                     }
                 ],
                 "isError": True,
             }
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("Gemini error: %s", e, exc_info=True)
             return {"content": [{"type": "text", "text": f"Gemini error: {e}"}], "isError": True}
 

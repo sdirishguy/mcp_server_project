@@ -45,7 +45,7 @@ ALLOWED_CORS_ORIGINS = [
     s.strip() for s in os.getenv("ALLOWED_CORS_ORIGINS", "").split(",") if s.strip()
 ]
 if ENVIRONMENT == "production" and not ALLOWED_CORS_ORIGINS:
-    logger.warning("No ALLOWED_CORS_ORIGINS set in production. " "CORS will be very restrictive.")
+    logger.warning("No ALLOWED_CORS_ORIGINS set in production. CORS will be very restrictive.")
 
 # Shell execution controls
 # Default OFF unless explicitly enabled.

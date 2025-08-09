@@ -7,13 +7,8 @@ This module provides an adapter for connecting to PostgreSQL databases.
 import asyncio
 from typing import Any
 
-from ...core.adapter import (
-    AdapterCapability,
-    AdapterMetadata,
-    DataRequest,
-    DataResponse,
-    MCPAdapter,
-)
+from ...core.adapter import (AdapterCapability, AdapterMetadata, DataRequest,
+                             DataResponse, MCPAdapter)
 
 
 class PostgreSQLAdapter(MCPAdapter):
@@ -61,7 +56,7 @@ class PostgreSQLAdapter(MCPAdapter):
             }
 
             return True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Failed to initialize PostgreSQL adapter: {e}")
             return False
 
@@ -149,7 +144,7 @@ class PostgreSQLAdapter(MCPAdapter):
                     data={"result": "Query executed successfully"},
                     status_code=200,
                 )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             return DataResponse(
                 data=None,
                 status_code=500,
@@ -169,7 +164,7 @@ class PostgreSQLAdapter(MCPAdapter):
             # In a real implementation, we would execute a simple query
             # For this example, we'll just check if the pool is connected
             return self._pool["connected"]
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     async def shutdown(self) -> None:

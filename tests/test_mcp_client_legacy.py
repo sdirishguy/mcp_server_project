@@ -1,6 +1,7 @@
 # test_mcp_client.py
 
 import asyncio
+import datetime
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,8 @@ logging.basicConfig(
         logging.StreamHandler(),
     ],
 )
+
+logger = logging.getLogger(__name__)
 
 
 # --- Dynamic Type Resolution with Placeholders ---

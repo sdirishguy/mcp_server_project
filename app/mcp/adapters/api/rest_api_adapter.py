@@ -6,13 +6,8 @@ This module provides an adapter for connecting to REST APIs.
 
 from typing import Any
 
-from ...core.adapter import (
-    AdapterCapability,
-    AdapterMetadata,
-    DataRequest,
-    DataResponse,
-    MCPAdapter,
-)
+from ...core.adapter import (AdapterCapability, AdapterMetadata, DataRequest,
+                             DataResponse, MCPAdapter)
 
 
 class RestApiAdapter(MCPAdapter):
@@ -52,7 +47,7 @@ class RestApiAdapter(MCPAdapter):
             }
 
             return True
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Failed to initialize REST API adapter: {e}")
             return False
 
@@ -148,7 +143,7 @@ class RestApiAdapter(MCPAdapter):
                 status_code=200 if status_code < 400 else status_code,
                 error=None if status_code < 400 else f"HTTP error: {status_code}",
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             return DataResponse(
                 data=None,
                 status_code=500,
@@ -168,7 +163,7 @@ class RestApiAdapter(MCPAdapter):
             # In a real implementation, we would make a request to the base URL
             # For this example, we'll just check if the client is connected
             return self._client["connected"]
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             return False
 
     async def shutdown(self) -> None:

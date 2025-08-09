@@ -73,7 +73,6 @@ class MCPAdapter(ABC):
         Returns:
             bool: True if initialization was successful, False otherwise
         """
-        pass
 
     @abstractmethod
     async def get_metadata(self) -> AdapterMetadata:
@@ -82,7 +81,6 @@ class MCPAdapter(ABC):
         Returns:
             AdapterMetadata: Metadata about the adapter
         """
-        pass
 
     @abstractmethod
     async def execute(self, request: DataRequest) -> DataResponse:
@@ -94,7 +92,6 @@ class MCPAdapter(ABC):
         Returns:
             DataResponse: The response from the data source
         """
-        pass
 
     @abstractmethod
     async def health_check(self) -> bool:
@@ -103,12 +100,11 @@ class MCPAdapter(ABC):
         Returns:
             bool: True if the adapter is healthy, False otherwise
         """
-        pass
 
     @abstractmethod
     async def shutdown(self) -> None:
         """Clean up resources when shutting down."""
-        pass
+        raise NotImplementedError
 
 
 class AdapterRegistry:

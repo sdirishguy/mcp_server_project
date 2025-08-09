@@ -21,28 +21,17 @@ from starlette.routing import Mount, Route
 from app.mcp.adapters.api.rest_api_adapter import RestApiAdapter
 from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
-
 # --- MCP component imports ---
-from app.mcp.core.adapter import (
-    AdapterManager,
-    AdapterRegistry,
-)
-from app.mcp.security.audit.audit_logging import (
-    AuditEvent,
-    AuditEventOutcome,
-    AuditEventType,
-    create_default_audit_logger,
-)
-from app.mcp.security.auth.authentication import (
-    AuthenticationManager,
-    InMemoryAuthProvider,
-)
-from app.mcp.security.auth.authorization import (
-    Action,
-    AuthorizationManager,
-    ResourceType,
-    create_admin_role,
-)
+from app.mcp.core.adapter import AdapterManager, AdapterRegistry
+from app.mcp.security.audit.audit_logging import (AuditEvent,
+                                                  AuditEventOutcome,
+                                                  AuditEventType,
+                                                  create_default_audit_logger)
+from app.mcp.security.auth.authentication import (AuthenticationManager,
+                                                  InMemoryAuthProvider)
+from app.mcp.security.auth.authorization import (Action, AuthorizationManager,
+                                                 ResourceType,
+                                                 create_admin_role)
 from app.tools import ALL_TOOLS
 
 logger = logging.getLogger(__name__)
@@ -135,7 +124,7 @@ async def login(request: Request):
             return JSONResponse(
                 {"authenticated": False, "error": "Invalid credentials"}, status_code=401
             )
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Login failed")
         return JSONResponse({"error": f"Login failed: {str(e)}"}, status_code=500)
 
@@ -172,7 +161,7 @@ async def create_adapter(request: Request):
         body = await request.json()
         # Adapter creation logic would go here
         return JSONResponse({"message": "Adapter created", "type": adapter_type, "config": body})
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Adapter creation failed")
         return JSONResponse({"message": f"Adapter creation failed: {str(e)}"}, status_code=500)
 
@@ -186,7 +175,7 @@ async def execute_request(request: Request):
         instance_id = request.path_params["instance_id"]
         # Execute request logic would go here
         return JSONResponse({"message": "Executed", "instance_id": instance_id, "body": body})
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Execute failed")
         return JSONResponse({"message": f"Execute failed: {str(e)}"}, status_code=500)
 
@@ -246,11 +235,11 @@ async def app_lifespan(starlette_app):
     if hasattr(mcp_app, "lifespan") and mcp_app.lifespan:
         async with mcp_app.lifespan(starlette_app):
             starlette_app.state.mcp_components = await setup_mcp()
-            logger.info("MCP components initialized and available via " "app.state.mcp_components")
+            logger.info("MCP components initialized and available via app.state.mcp_components")
             yield
     else:
         starlette_app.state.mcp_components = await setup_mcp()
-        logger.info("MCP components initialized and available via " "app.state.mcp_components")
+        logger.info("MCP components initialized and available via app.state.mcp_components")
         yield
 
 
@@ -282,7 +271,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse({"message": "Invalid token"}, status_code=401)
             request.state.user = auth_result
             return await call_next(request)
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error("Authentication error: %s", str(e))
             return JSONResponse({"message": "Authentication error"}, status_code=500)
 
