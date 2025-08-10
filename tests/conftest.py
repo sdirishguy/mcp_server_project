@@ -26,25 +26,32 @@ TEST_QUERY = {"method": "get", "path": "/get", "params": {"hello": "world"}}
 
 
 async def _try_get_token(client: httpx.AsyncClient) -> str | None:
+    """Try to get an authentication token from common auth endpoints."""
     candidates = ["/auth/login", "/api/auth/login", "/api/login"]
     payloads = [
         {"username": "test", "password": "test"},
         {"username": "admin", "password": "admin"},
     ]
+
     for path in candidates:
         url = f"{BASE_URL}{path}"
         for body in payloads:
             try:
-                resp = await client.post(url, json=body, timeout=10)
+                resp = await client.post(url, json=body, timeout=5)
                 if resp.status_code == 200:
                     data = resp.json()
                     auth_token = data.get("token") or data.get("access_token")
                     if auth_token:
                         logger.info("Obtained auth token from %s", path)
                         return auth_token
-            except (httpx.RequestError, httpx.HTTPStatusError):
+            except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException):
                 # Quietly try next option
                 pass
+            except Exception as e:
+                # Log unexpected errors but continue
+                logger.debug("Unexpected error during auth attempt: %s", e)
+                pass
+
     logger.info("No auth endpoint found; proceeding without Authorization header.")
     return None
 
@@ -52,7 +59,11 @@ async def _try_get_token(client: httpx.AsyncClient) -> str | None:
 @pytest.fixture(scope="function")
 async def http_client():
     """Provide an httpx AsyncClient for making HTTP requests in tests."""
-    async with httpx.AsyncClient() as client:
+    # Create client with explicit timeout and connection limits for CI stability
+    timeout = httpx.Timeout(10.0, connect=5.0)
+    limits = httpx.Limits(max_keepalive_connections=1, max_connections=2)
+
+    async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
         yield client
 
 

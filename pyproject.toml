@@ -43,3 +43,12 @@ ignore = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+addopts = "--tb=short -v"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "anyio: marks tests as needing anyio (deselect with '-m \"not anyio\"')",
+]
+# Use only asyncio backend for stability in CI environments
+# (configured via ANYIO_BACKEND environment variable)

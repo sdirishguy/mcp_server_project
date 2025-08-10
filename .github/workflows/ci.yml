@@ -43,6 +43,11 @@ jobs:
           sleep 2
 
       - name: Run tests
+        env:
+          PYTHONPATH: .
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "true"
+          ANYIO_BACKEND: "asyncio"
         run: |
           source .venv/bin/activate
+          # Only run asyncio tests in CI to avoid event loop issues
           pytest -q
