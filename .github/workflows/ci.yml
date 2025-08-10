@@ -45,7 +45,6 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: .
-          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "true"
           ANYIO_BACKEND: "asyncio"
         run: |
           source .venv/bin/activate
