@@ -9,6 +9,7 @@ endpoints for Model Context Protocol operations.
 # app/main.py
 
 import logging
+import os
 
 from fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -66,7 +67,8 @@ async def setup_mcp():
     authz_manager = AuthorizationManager()
     authz_manager.add_role(create_admin_role())
 
-    audit_logger = create_default_audit_logger("audit.log")
+    audit_log_file = os.getenv("AUDIT_LOG_FILE", "audit.log")
+    audit_logger = create_default_audit_logger(audit_log_file)
 
     l1_cache = InMemoryCache(max_size=1000)
     cache_manager = CacheManager(l1_cache)
@@ -164,8 +166,35 @@ async def create_adapter(request: Request):
             return JSONResponse({"message": "Forbidden"}, status_code=403)
 
         body = await request.json()
-        # Adapter creation logic would go here
-        return JSONResponse({"message": "Adapter created", "type": adapter_type, "config": body})
+
+        # Create adapter instance using the adapter manager
+        import uuid
+
+        instance_id = str(uuid.uuid4())
+        await mcp_components["adapter_manager"].create_adapter(
+            adapter_id=adapter_type, instance_id=instance_id, config=body
+        )
+
+        await mcp_components["audit_logger"].log_event(
+            AuditEvent(
+                event_type=AuditEventType.AUTHORIZATION,
+                event_action="create_adapter",
+                outcome=AuditEventOutcome.SUCCESS,
+                user_id=user.user_id,
+                resource_type="adapter",
+                resource_id=adapter_type,
+                details={"instance_id": instance_id, "config": body},
+            )
+        )
+
+        return JSONResponse(
+            {
+                "message": "Adapter created",
+                "type": adapter_type,
+                "instance_id": instance_id,
+                "config": body,
+            }
+        )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Adapter creation failed")
         return JSONResponse({"message": f"Adapter creation failed: {str(e)}"}, status_code=500)
@@ -175,11 +204,41 @@ async def execute_request(request: Request):
     """Execute a request on an adapter instance."""
     if not hasattr(request.app.state, "mcp_components"):
         return JSONResponse({"error": "MCP Server not ready"}, status_code=503)
+    mcp_components = request.app.state.mcp_components
     try:
         body = await request.json()
         instance_id = request.path_params["instance_id"]
-        # Execute request logic would go here
-        return JSONResponse({"message": "Executed", "instance_id": instance_id, "body": body})
+
+        # Execute request using the adapter manager
+        from app.mcp.core.adapter import DataRequest
+
+        data_request = DataRequest(
+            query=f"{body.get('method', 'GET')} {body.get('path', '/')}",
+            parameters={
+                "method": body.get("method", "GET"),
+                "path": body.get("path", "/"),
+                "params": body.get("params", {}),
+                "headers": body.get("headers", {}),
+                "body": body.get("body"),
+            },
+        )
+
+        response = await mcp_components["adapter_manager"].execute_request(
+            instance_id, data_request
+        )
+
+        return JSONResponse(
+            {
+                "message": "Executed",
+                "instance_id": instance_id,
+                "status_code": response.status_code,
+                "data": response.data,
+                "metadata": response.metadata,
+                "error": response.error,
+            }
+        )
+    except KeyError as e:
+        return JSONResponse({"message": f"Adapter instance not found: {str(e)}"}, status_code=404)
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Execute failed")
         return JSONResponse({"message": f"Execute failed: {str(e)}"}, status_code=500)

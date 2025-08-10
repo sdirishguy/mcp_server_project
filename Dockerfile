@@ -20,10 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy app code
 COPY app ./app
-COPY test_mcp_client.py ./
+COPY shared_host_folder ./shared_host_folder
 
-# Create a host_data dir for persistent volumes and make it accessible
-RUN mkdir -p /app/host_data && chown appuser:appuser /app/host_data
+# Create directories for logs and data, and set proper permissions
+RUN mkdir -p /app/logs /app/host_data && \
+    chown -R appuser:appuser /app/logs /app/host_data /app/shared_host_folder
 
 # Default to non-root user
 USER appuser
@@ -31,10 +32,13 @@ USER appuser
 # Expose MCP port (and FastAPI if you use it separately)
 EXPOSE 8000
 
+# Set environment variable for audit log location
+ENV AUDIT_LOG_FILE=/app/logs/audit.log
+
 # Entrypoint: run the MCP server by default
 CMD ["python", "-m", "app.main"]
 
 
 # Commands to run file
 # docker build -t mcp-server .
-# docker run -it --rm -p 8000:8000 -v $PWD/host_data:/app/host_data mcp-server
+# docker run -it --rm -p 8000:8000 -v $PWD/host_data:/app/host_data -v $PWD/logs:/app/logs mcp-server
