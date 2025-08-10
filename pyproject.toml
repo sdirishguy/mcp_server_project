@@ -41,6 +41,8 @@ ignore = [
   "UP046",  # Keep Generic[...] for compatibility with Python < 3.12 (PEP 695 not available)
 ]
 
+
+
 [tool.pytest.ini_options]
 addopts = "--tb=short -v"
 testpaths = ["tests"]

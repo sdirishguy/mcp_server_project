@@ -44,15 +44,18 @@ async def _try_get_token(client: httpx.AsyncClient) -> str | None:
                     if auth_token:
                         logger.info("Obtained auth token from %s", path)
                         return auth_token
-            except (httpx.RequestError, httpx.HTTPStatusError, httpx.TimeoutException):
-                # Quietly try next option
-                pass
-            except Exception as e:
-                # Log unexpected errors but continue
-                logger.debug("Unexpected error during auth attempt: %s", e)
-                pass
+            except (
+                httpx.ConnectError,
+                httpx.ReadError,
+                httpx.WriteError,
+                httpx.RequestError,
+                httpx.HTTPStatusError,
+                httpx.TimeoutException,
+            ) as e:
+                # Log unexpected network errors but continue
+                logger.debug("Network error during auth attempt: %s", e)  # noqa: G004
 
-    logger.info("No auth endpoint found; proceeding without Authorization header.")
+    logger.info("No auth endpoint found; proceeding w/o Authorization header.")
     return None
 
 
