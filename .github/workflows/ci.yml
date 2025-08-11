@@ -5,48 +5,43 @@ on:
   pull_request:
 
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Set up venv
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          python -m pip install -U pip
+          cache: "pip"
 
       - name: Install deps
         run: |
-          source .venv/bin/activate
-          pip install -r requirements.txt
+          python -m pip install -U pip
+          # requirements.txt is optional in your repo
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install -r requirements-dev.txt
 
-      - name: Lint & format
-        run: |
-          source .venv/bin/activate
-          ruff check .
-          black --check .
-          isort --check-only .
+      - name: Lint (ruff)
+        run: make lint
 
-      - name: Start server
-        run: |
-          source .venv/bin/activate
-          export ALLOW_ARBITRARY_SHELL_COMMANDS=true
-          export SHELL_ALLOWLIST="ls,cat,echo"
-          uvicorn app.main:app --port 8000 &
-          sleep 2
+      - name: Typecheck (mypy)
+        run: make typecheck
 
-      - name: Run tests
+      - name: Tests (starts/stops uvicorn)
         env:
-          PYTHONPATH: .
-          ANYIO_BACKEND: "asyncio"
-        run: |
-          source .venv/bin/activate
-          # Only run asyncio tests in CI to avoid event loop issues
-          pytest -q
+          WAIT_SECS: 60
+          LOG_LEVEL: INFO
+          ADMIN_USERNAME: admin
+          ADMIN_PASSWORD: admin123
+        run: make test
+
+      # Optional: secured flow tests (enable when needed)
+      # - name: Auth Flow Tests
+      #   env:
+      #     WAIT_SECS: 60
+      #     RUN_AUTH_TESTS: "1"
+      #     LOG_LEVEL: INFO
+      #     ADMIN_USERNAME: admin
+      #     ADMIN_PASSWORD: admin123
+      #   run: make test
