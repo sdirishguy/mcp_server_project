@@ -29,17 +29,17 @@ There are no packages like it in Package Control.
 My package is similar to ... However it should still be added because ...
 
 
-<!-- 
+<!--
 *)   Unless it definitely really needs them,
      they apply to the cursor's context
      and their visibility is conditional.
      Space in this menu is limited!
 **)  There aren't enough keys for all packages,
      you'd risk overriding those of other packages.
-     You can put commented out suggestions in a keymap file, 
+     You can put commented out suggestions in a keymap file,
      and/or explain how to create bindings in your README.
 ***) We have hundreds of color schemes,
-     and plenty of scopes to make any syntax work. 
+     and plenty of scopes to make any syntax work.
 
 For bonus points also considered how the review guidelines apply to your package:
 https://github.com/wbond/package_control_channel/wiki#reviewing-a-package-addition

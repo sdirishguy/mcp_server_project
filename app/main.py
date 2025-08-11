@@ -6,24 +6,28 @@ authorization, audit logging, and MCP tool routing. It provides secure HTTP
 endpoints for Model Context Protocol operations.
 """
 
-# app/main.py
+from __future__ import annotations
 
 import logging
 import os
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
+from typing import Any, TypedDict, cast
 
 from fastmcp import FastMCP
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
 
+from app.docs_app import app as docs_asgi_app
+from app.logging_config import RequestIDMiddleware, configure_json_logging
 from app.mcp.adapters.api.rest_api_adapter import RestApiAdapter
 from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
-
-# --- MCP component imports ---
 from app.mcp.core.adapter import AdapterManager, AdapterRegistry
 from app.mcp.security.audit.audit_logging import (
     AuditEvent,
@@ -49,7 +53,12 @@ logger.setLevel(logging.INFO)
 class User:
     """Simple user model for authentication state."""
 
-    def __init__(self, user_id: str, roles=None, permissions=None):
+    def __init__(
+        self,
+        user_id: str,
+        roles: list[str] | None = None,
+        permissions: list[str] | None = None,
+    ) -> None:
         """Initialize user with ID, roles, and permissions."""
         self.user_id = user_id
         self.roles = roles or []
@@ -57,7 +66,9 @@ class User:
 
 
 # --- MCP component setup ---
-async def setup_mcp():
+
+
+async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
     auth_provider = InMemoryAuthProvider()
@@ -70,7 +81,7 @@ async def setup_mcp():
     audit_log_file = os.getenv("AUDIT_LOG_FILE", "audit.log")
     audit_logger = create_default_audit_logger(audit_log_file)
 
-    l1_cache = InMemoryCache(max_size=1000)
+    l1_cache: InMemoryCache = InMemoryCache(max_size=1000)
     cache_manager = CacheManager(l1_cache)
 
     registry = AdapterRegistry()
@@ -90,7 +101,7 @@ async def setup_mcp():
 # ------------------- Route handlers -------------------
 
 
-async def login(request: Request):
+async def login(request: Request) -> JSONResponse:
     """Handle user login with credential validation and audit logging."""
     if not hasattr(request.app.state, "mcp_components"):
         return JSONResponse({"error": "MCP Server not ready"}, status_code=503)
@@ -98,7 +109,8 @@ async def login(request: Request):
     try:
         credentials = await request.json()
         auth_result = await mcp_components["auth_manager"].authenticate(
-            provider_id="local", credentials=credentials
+            provider_id="local",
+            credentials=credentials,
         )
         if auth_result.authenticated:
             await mcp_components["audit_logger"].log_event(
@@ -129,14 +141,15 @@ async def login(request: Request):
                 )
             )
             return JSONResponse(
-                {"authenticated": False, "error": "Invalid credentials"}, status_code=401
+                {"authenticated": False, "error": "Invalid credentials"},
+                status_code=401,
             )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Login failed")
         return JSONResponse({"error": f"Login failed: {str(e)}"}, status_code=500)
 
 
-async def create_adapter(request: Request):
+async def create_adapter(request: Request) -> JSONResponse:
     """Create a new adapter instance with authorization checks."""
     if not hasattr(request.app.state, "mcp_components"):
         return JSONResponse({"error": "MCP Server not ready"}, status_code=503)
@@ -172,7 +185,9 @@ async def create_adapter(request: Request):
 
         instance_id = str(uuid.uuid4())
         await mcp_components["adapter_manager"].create_adapter(
-            adapter_id=adapter_type, instance_id=instance_id, config=body
+            adapter_id=adapter_type,
+            instance_id=instance_id,
+            config=body,
         )
 
         await mcp_components["audit_logger"].log_event(
@@ -200,7 +215,7 @@ async def create_adapter(request: Request):
         return JSONResponse({"message": f"Adapter creation failed: {str(e)}"}, status_code=500)
 
 
-async def execute_request(request: Request):
+async def execute_request(request: Request) -> JSONResponse:
     """Execute a request on an adapter instance."""
     if not hasattr(request.app.state, "mcp_components"):
         return JSONResponse({"error": "MCP Server not ready"}, status_code=503)
@@ -212,7 +227,7 @@ async def execute_request(request: Request):
         # Execute request using the adapter manager
         from app.mcp.core.adapter import DataRequest
 
-        data_request = DataRequest(
+        data_request = DataRequest(  # type: ignore[call-arg]
             query=f"{body.get('method', 'GET')} {body.get('path', '/')}",
             parameters={
                 "method": body.get("method", "GET"),
@@ -224,7 +239,8 @@ async def execute_request(request: Request):
         )
 
         response = await mcp_components["adapter_manager"].execute_request(
-            instance_id, data_request
+            instance_id,
+            data_request,
         )
 
         return JSONResponse(
@@ -238,13 +254,16 @@ async def execute_request(request: Request):
             }
         )
     except KeyError as e:
-        return JSONResponse({"message": f"Adapter instance not found: {str(e)}"}, status_code=404)
+        return JSONResponse(
+            {"message": f"Adapter instance not found: {str(e)}"},
+            status_code=404,
+        )
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception("Execute failed")
         return JSONResponse({"message": f"Execute failed: {str(e)}"}, status_code=500)
 
 
-async def protected_route(request: Request):
+async def protected_route(request: Request) -> JSONResponse:
     """Protected route that requires authentication."""
     user = getattr(request.state, "user", None)
     if not user:
@@ -254,7 +273,7 @@ async def protected_route(request: Request):
     )
 
 
-async def whoami(request):
+async def whoami(request: Request) -> JSONResponse:
     """Return server status and available auth providers."""
     if not hasattr(request.app.state, "mcp_components"):
         return JSONResponse({"error": "MCP Server not ready"}, status_code=503)
@@ -267,21 +286,33 @@ async def whoami(request):
     )
 
 
-async def health(_request):
+async def health(_request: Request) -> JSONResponse:
     """Health check endpoint."""
     return JSONResponse({"status": "ok", "message": "MCP Server is running!"})
 
 
 # --- FastMCP app and tools ---
-mcp = FastMCP("MCP Server", stateless_http=True)
-for tool in ALL_TOOLS:
+
+
+class ToolEntry(TypedDict):
+    name: str
+    description: str
+    handler: Callable[..., Awaitable[dict[str, Any]]]
+
+
+mcp: FastMCP = FastMCP("MCP Server", stateless_http=True)
+tools_typed: list[ToolEntry] = cast("list[ToolEntry]", ALL_TOOLS)
+for tool in tools_typed:
     mcp.tool(name=tool["name"], description=tool["description"])(tool["handler"])
-logger.info("Registered %d tools with FastMCP.", len(ALL_TOOLS))
+logger.info("Registered %d tools with FastMCP.", len(tools_typed))
 mcp_app = mcp.http_app(path="/mcp.json/")
 
 
 # ------------------- Routing -------------------
+
+
 routes = [
+    Mount("/docs", app=docs_asgi_app),
     Route("/api/auth/login", login, methods=["POST"]),
     Route("/api/adapters/{adapter_type}", create_adapter, methods=["POST"]),
     Route("/api/adapters/{instance_id}/execute", execute_request, methods=["POST"]),
@@ -289,13 +320,18 @@ routes = [
     Route("/whoami", whoami),
     Route("/health", health),
     Mount("/mcp", app=mcp_app),
+    Mount("/api", app=mcp_app),  # exposes /api/mcp.json/
 ]
 
 
 # --- Lifespan handler ---
-async def app_lifespan(starlette_app):
-    """Handle application lifespan and MCP component initialization."""
-    # Run FastMCP lifespan if needed
+
+
+@asynccontextmanager
+async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+    # Ensure JSON logging inside worker/reloader processes
+    configure_json_logging(os.getenv("LOG_LEVEL", "INFO"))
+
     if hasattr(mcp_app, "lifespan") and mcp_app.lifespan:
         async with mcp_app.lifespan(starlette_app):
             starlette_app.state.mcp_components = await setup_mcp()
@@ -313,12 +349,23 @@ async def app_lifespan(starlette_app):
 class AuthMiddleware(BaseHTTPMiddleware):
     """Authentication middleware for validating bearer tokens."""
 
-    async def dispatch(self, request: Request, call_next):
-        """Dispatch method to handle authentication for incoming requests."""
-        # Allow some public paths
-        public_paths = ["/api/auth/login", "/health", "/whoami", "/api/mcp.json/"]
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """Handle authentication for incoming requests."""
+        public_prefixes = (
+            "/api/auth/login",
+            "/health",
+            "/whoami",
+            "/mcp/mcp.json",  # MCP JSON endpoint (SSE)
+            "/api/mcp.json",
+            "/docs",  # Swagger UI + openapi.json + assets
+        )
+
         if request.method == "OPTIONS" or any(
-            request.url.path.startswith(path) for path in public_paths
+            request.url.path.startswith(p) for p in public_prefixes
         ):
             return await call_next(request)
 
@@ -341,17 +388,25 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 
 # --- Starlette app assembly ---
-app = Starlette(debug=True, routes=routes, lifespan=app_lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(AuthMiddleware)
+
+middleware = [
+    Middleware(RequestIDMiddleware),
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    ),
+    Middleware(AuthMiddleware),
+]
+
+app = Starlette(debug=True, routes=routes, lifespan=app_lifespan, middleware=middleware)
+
 
 if __name__ == "__main__":
+    configure_json_logging(os.getenv("LOG_LEVEL", "INFO"))
     import uvicorn
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

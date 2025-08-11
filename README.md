@@ -314,3 +314,23 @@ MIT License
 - **OpenAI, Google Gemini API teams** - LLM integrations
 - **Starlette/FastAPI** - ASGI framework
 - **Developed by @SDIRISHGUY**
+
+---
+
+## Quickstart (90 seconds)
+
+```bash
+# 1) Install deps (prefer venv)
+pip install -r requirements.txt -r requirements-dev.txt
+
+# 2) Pre-commit (format + lint + types)
+make precommit
+
+# 3) Run in dev with hot-reload + JSON logs
+LOG_LEVEL=INFO python -m app.cli run --reload
+# Docs at: http://localhost:8000/docs/
+
+# 4) CLI examples
+python -m app.cli tools list
+python -m app.cli tools call file_system_read_file --params '{"path":"README.md"}'
+```

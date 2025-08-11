@@ -1,10 +1,27 @@
-pytest>=8.4
+# --- Lint & format (Ruff replaces black+isort) ---
+ruff>=0.5,<1.0
+
+# --- Type checking ---
+mypy>=1.10,<2.0
+
+# --- Testing core ---
+pytest>=8.2,<9.0
 pytest-asyncio>=0.24
+anyio>=4.0
+
+# Keep these ONLY if your tests actually use Trio
 pytest-trio>=0.8.0
 trio>=0.27.0
-anyio>=4.7.0
+
+# --- Test UX & speed ---
+pytest-sugar>=1.0,<2.0     # progress bar / nicer output
+pytest-xdist>=3.5,<4.0     # parallel tests (-n auto)
+
+# Optional coverage support (used by `make coverage`)
+pytest-cov>=5.0,<6.0
+
+# --- Dev workflow ---
+pre-commit>=3.7,<5.0
+
+# Test helpers used in the suite
 httpx>=0.28
-ruff>=0.12
-black>=25.1
-isort>=6.0
-pre-commit>=4.2

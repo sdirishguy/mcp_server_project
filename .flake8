@@ -1,6 +1,6 @@
 [flake8]
 max-line-length = 100
-extend-exclude = 
+extend-exclude =
     package_control_channel/**,
     .venv/**,
     build/**,

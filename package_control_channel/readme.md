@@ -22,10 +22,10 @@ package or repository go smoothly.**
 
 A few words towards naming conventions etc, for entries in these files:
 
-- Packages avoid having the word "Sublime" in their name (see [docs](https://packagecontrol.io/docs/submitting_a_package#Step_2)). 
+- Packages avoid having the word "Sublime" in their name (see [docs](https://packagecontrol.io/docs/submitting_a_package#Step_2)).
 - Language support (aka "syntax" or "grammar") packages are named after the language it supports, without suffixes like "syntax" or "highlighting" (e.g. #8801).
 - Labels are always in lowercase.
-- Packages that provide ... 
+- Packages that provide ...
   - a [language syntax](https://www.sublimetext.com/docs/syntax.html) have the "language syntax" label (see #9088).
   - (the colors for) [syntax highlighting](https://www.sublimetext.com/docs/color_schemes.html) have the "color scheme" label, whereas packages that provide [theming for the UI](https://www.sublimetext.com/docs/themes.html) have the "theme" label.
   - a [build system](https://www.sublimetext.com/docs/build_systems.html) have the "build system" label (see #9093).

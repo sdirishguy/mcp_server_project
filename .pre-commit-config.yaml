@@ -1,59 +1,25 @@
-# Run formatting and linting only on our project code, not vendor/venv/etc.
-default_language_version:
-  python: python3.12
-
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-ast
+      - id: debug-statements
+
+  # Ruff lint + format (needs a version that understands UP046)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8
+    rev: v0.12.8   # any 0.6.x is fine; newer also OK
     hooks:
       - id: ruff
         args: [--fix]
-        exclude: >
-          ^(
-            package_control_channel/|
-            \.venv/|
-            build/|
-            dist/|
-            node_modules/|
-            .*/migrations/
-          )
       - id: ruff-format
-        exclude: >
-          ^(
-            package_control_channel/|
-            \.venv/|
-            build/|
-            dist/|
-            node_modules/|
-            .*/migrations/
-          )
 
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
+  # mypy: run with your mypy.ini and DO NOT pass file names (uses "files=" from config)
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.17.1
     hooks:
-      - id: black
-        args: ["--line-length", "100"]
-        exclude: >
-          ^(
-            package_control_channel/|
-            \.venv/|
-            build/|
-            dist/|
-            node_modules/|
-            .*/migrations/
-          )
-
-  - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
-    hooks:
-      - id: isort
-        args: ["--profile", "black", "--line-length", "100"]
-        exclude: >
-          ^(
-            package_control_channel/|
-            \.venv/|
-            build/|
-            dist/|
-            node_modules/|
-            .*/migrations/
-          )
+      - id: mypy
+        args: ["--config-file=mypy.ini"]
+        pass_filenames: false
