@@ -58,7 +58,7 @@ test:
 	    exit 1; \
 	  fi; \
 	fi; \
-	pytest -v -ra --maxfail=1 --durations=10 || STATUS=$$?; \
+	PYTHONPATH=. pytest -v -ra --maxfail=1 --durations=10 || STATUS=$$?; \
 	if [ -f .uvicorn_test.pid ]; then \
 	  echo "🛑 Stopping uvicorn..."; \
 	  kill -TERM $$(cat .uvicorn_test.pid) >/dev/null 2>&1 || true; \
@@ -68,7 +68,7 @@ test:
 
 coverage:
 	@echo "📈 Running tests with coverage..."
-	@pytest -v -ra --maxfail=1 --durations=10 -n auto --cov=app --cov-report=term-missing
+	@PYTHONPATH=. pytest -v -ra --maxfail=1 --durations=10 -n auto --cov=app --cov-report=term-missing
 
 precommit:
 	pre-commit run -a

@@ -48,6 +48,7 @@ addopts = "--tb=short -v"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+pythonpath = ["."]
 markers = [
     "anyio: marks tests as needing anyio (deselect with '-m \"not anyio\"')",
     "asyncio: marks tests as needing asyncio",

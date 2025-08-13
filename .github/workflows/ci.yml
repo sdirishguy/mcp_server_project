@@ -34,6 +34,7 @@ jobs:
           LOG_LEVEL: INFO
           ADMIN_USERNAME: admin
           ADMIN_PASSWORD: admin123
+          PYTHONPATH: .
         run: make test
 
       # Optional: secured flow tests (enable when needed)
