@@ -17,12 +17,24 @@ lint:
 	    printf "\r  $${sp:$$i:1} ruff running..."; sleep 0.2; done; \
 	  printf "\r"; wait $$pid'
 
+TYPECHECK_FLAGS=--config-file mypy.ini --pretty --show-column-numbers --show-error-codes --color-output
+REPORT_DIR=.reports
+
 typecheck:
-	@echo "🔡 Type checking with mypy..."
-	@bash -c 'set -e; mypy app --pretty -v & pid=$$!; sp="|/-\\"; i=0; \
-	  while kill -0 $$pid 2>/dev/null; do i=$$(((i+1)%4)); \
-	    printf "\r  $${sp:$$i:1} mypy running..."; sleep 0.2; done; \
-	  printf "\r"; wait $$pid'
+	@mkdir -p $(REPORT_DIR)
+	@echo "🔎 Running mypy..."
+	@ts=$$(date +%Y%m%d-%H%M%S); \
+	MYPY_FORCE_COLOR=1 mypy . $(TYPECHECK_FLAGS) | tee $(REPORT_DIR)/mypy-$$ts.log; \
+	echo ""; \
+	echo "📄 Full mypy report saved to: $(REPORT_DIR)/mypy-$$ts.log"; \
+	grep -E "Found [0-9]+ errors|Success: no issues" $(REPORT_DIR)/mypy-$$ts.log || true
+
+typecheck-open:
+	@f=$$(ls -1t $(REPORT_DIR)/mypy-*.log 2>/dev/null | head -1); \
+	if [ -z "$$f" ]; then echo "No mypy reports yet."; exit 1; fi; \
+	echo "Opening $$f"; \
+	$${PAGER:-less} -R "$$f"
+
 
 test:
 	@echo "🧪 Running pytest (progress bar, server up)..."

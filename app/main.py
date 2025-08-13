@@ -15,10 +15,15 @@ from contextlib import asynccontextmanager
 from typing import Any, TypedDict, cast
 
 from fastmcp import FastMCP
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+# SecurityMiddleware not available in current Starlette version
+# We'll implement security headers manually
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Mount, Route
@@ -26,6 +31,7 @@ from starlette.routing import Mount, Route
 from app.docs_app import app as docs_asgi_app
 from app.logging_config import RequestIDMiddleware, configure_json_logging
 from app.mcp.adapters.api.rest_api_adapter import RestApiAdapter
+from app.monitoring import MonitoringMiddleware, record_auth_attempt, metrics_endpoint, get_health_metrics
 from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
 from app.mcp.core.adapter import AdapterManager, AdapterRegistry
@@ -42,10 +48,15 @@ from app.mcp.security.auth.authorization import (
     ResourceType,
     create_admin_role,
 )
+from app.settings import settings
 from app.tools import ALL_TOOLS
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+# Rate limiter setup
+limiter = Limiter(key_func=get_remote_address)
+
 
 # ----- Auth models (simplified for brevity here) -----
 
@@ -72,7 +83,8 @@ async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
     auth_provider = InMemoryAuthProvider()
-    auth_provider.add_user("admin", "admin123", roles=["admin"])
+    # Bootstrap creds from .env via Settings
+    auth_provider.add_user(settings.ADMIN_USERNAME, settings.ADMIN_PASSWORD, roles=["admin"])
     auth_manager.register_provider("local", auth_provider)
 
     authz_manager = AuthorizationManager()
@@ -101,6 +113,7 @@ async def setup_mcp() -> dict[str, Any]:
 # ------------------- Route handlers -------------------
 
 
+@limiter.limit("5 per minute")
 async def login(request: Request) -> JSONResponse:
     """Handle user login with credential validation and audit logging."""
     if not hasattr(request.app.state, "mcp_components"):
@@ -113,6 +126,7 @@ async def login(request: Request) -> JSONResponse:
             credentials=credentials,
         )
         if auth_result.authenticated:
+            record_auth_attempt("success")
             await mcp_components["audit_logger"].log_event(
                 AuditEvent(
                     event_type=AuditEventType.AUTHENTICATION,
@@ -132,6 +146,7 @@ async def login(request: Request) -> JSONResponse:
                 }
             )
         else:
+            record_auth_attempt("failure")
             await mcp_components["audit_logger"].log_event(
                 AuditEvent(
                     event_type=AuditEventType.AUTHENTICATION,
@@ -227,7 +242,7 @@ async def execute_request(request: Request) -> JSONResponse:
         # Execute request using the adapter manager
         from app.mcp.core.adapter import DataRequest
 
-        data_request = DataRequest(  # type: ignore[call-arg]
+        data_request = DataRequest(
             query=f"{body.get('method', 'GET')} {body.get('path', '/')}",
             parameters={
                 "method": body.get("method", "GET"),
@@ -236,6 +251,9 @@ async def execute_request(request: Request) -> JSONResponse:
                 "headers": body.get("headers", {}),
                 "body": body.get("body"),
             },
+            context={},  # default empty context
+            max_results=100,  # sane default
+            timeout_ms=30000,  # 30s
         )
 
         response = await mcp_components["adapter_manager"].execute_request(
@@ -313,6 +331,7 @@ mcp_app = mcp.http_app(path="/mcp.json/")
 
 routes = [
     Mount("/docs", app=docs_asgi_app),
+    Route("/metrics", metrics_endpoint),
     Route("/api/auth/login", login, methods=["POST"]),
     Route("/api/adapters/{adapter_type}", create_adapter, methods=["POST"]),
     Route("/api/adapters/{instance_id}/execute", execute_request, methods=["POST"]),
@@ -330,7 +349,7 @@ routes = [
 @asynccontextmanager
 async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
     # Ensure JSON logging inside worker/reloader processes
-    configure_json_logging(os.getenv("LOG_LEVEL", "INFO"))
+    configure_json_logging(settings.LOG_LEVEL)
 
     if hasattr(mcp_app, "lifespan") and mcp_app.lifespan:
         async with mcp_app.lifespan(starlette_app):
@@ -346,6 +365,31 @@ async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
 # ---- Middleware ----
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Middleware for adding security headers to all responses."""
+    
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """Add security headers to the response."""
+        response = await call_next(request)
+        
+        # Add security headers
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'"
+        )
+        
+        return response
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Authentication middleware for validating bearer tokens."""
 
@@ -359,6 +403,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/api/auth/login",
             "/health",
             "/whoami",
+            "/metrics",  # Prometheus metrics endpoint
             "/mcp/mcp.json",  # MCP JSON endpoint (SSE)
             "/api/mcp.json",
             "/docs",  # Swagger UI + openapi.json + assets
@@ -392,21 +437,37 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 middleware = [
     Middleware(RequestIDMiddleware),
+    Middleware(MonitoringMiddleware),
     Middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     ),
+    Middleware(SecurityHeadersMiddleware),
     Middleware(AuthMiddleware),
 ]
 
-app = Starlette(debug=True, routes=routes, lifespan=app_lifespan, middleware=middleware)
+# mypy has trouble with Starlette's lifespan protocol; the app works as intended.
+app = Starlette(  # type: ignore[arg-type]
+    debug=True,
+    routes=routes,
+    lifespan=app_lifespan,
+    middleware=middleware,
+)
+
+# Add rate limiting exception handler
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 if __name__ == "__main__":
-    configure_json_logging(os.getenv("LOG_LEVEL", "INFO"))
+    configure_json_logging(settings.LOG_LEVEL)
     import uvicorn
 
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=settings.SERVER_PORT,
+        reload=True,
+    )

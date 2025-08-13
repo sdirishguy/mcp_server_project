@@ -22,6 +22,7 @@ from .config import (
     OPENAI_API_KEY,
     logger,
 )
+from .monitoring import tool_execution_monitor
 
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
@@ -40,64 +41,75 @@ def _resolve_and_verify_path(path_str: str | None) -> Path:
 
 async def file_system_create_directory_tool(path: str) -> dict[str, Any]:
     """Create a directory within the sandbox."""
-    try:
-        target_path = _resolve_and_verify_path(path)
-        target_path.mkdir(parents=True, exist_ok=True)
-        return {"content": [{"type": "text", "text": f"Directory '{path}' created."}]}
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error creating directory '%s': %s", path, e, exc_info=True)
-        return {
-            "content": [{"type": "text", "text": f"Failed to create directory: {e}"}],
-            "isError": True,
-        }
+    async with tool_execution_monitor("file_system_create_directory"):
+        try:
+            target_path = _resolve_and_verify_path(path)
+            target_path.mkdir(parents=True, exist_ok=True)
+            return {"content": [{"type": "text", "text": f"Directory '{path}' created."}]}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error creating directory '%s': %s", path, e, exc_info=True)
+            return {
+                "content": [{"type": "text", "text": f"Failed to create directory: {e}"}],
+                "isError": True,
+            }
 
 
 async def file_system_write_file_tool(path: str, content: str) -> dict[str, Any]:
     """Write content to a file within the sandbox."""
-    try:
-        target_path = _resolve_and_verify_path(path)
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_text(content, encoding="utf-8")
-        return {"content": [{"type": "text", "text": f"File '{path}' written successfully."}]}
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error writing file '%s': %s", path, e, exc_info=True)
-        return {
-            "content": [{"type": "text", "text": f"Failed to write file: {e}"}],
-            "isError": True,
-        }
+    async with tool_execution_monitor("file_system_write_file"):
+        try:
+            target_path = _resolve_and_verify_path(path)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            target_path.write_text(content, encoding="utf-8")
+            return {"content": [{"type": "text", "text": f"File '{path}' written successfully."}]}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error writing file '%s': %s", path, e, exc_info=True)
+            return {
+                "content": [{"type": "text", "text": f"Failed to write file: {e}"}],
+                "isError": True,
+            }
 
 
 async def file_system_read_file_tool(path: str) -> dict[str, Any]:
     """Read content from a file within the sandbox."""
-    try:
-        target_path = _resolve_and_verify_path(path)
-        if not target_path.is_file():
-            return {"content": [{"type": "text", "text": "File not found."}], "isError": True}
-        content_read = target_path.read_text(encoding="utf-8")
-        return {"content": [{"type": "text", "text": content_read}]}
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error reading file '%s': %s", path, e, exc_info=True)
-        return {"content": [{"type": "text", "text": f"Failed to read file: {e}"}], "isError": True}
+    async with tool_execution_monitor("file_system_read_file"):
+        try:
+            target_path = _resolve_and_verify_path(path)
+            if not target_path.is_file():
+                return {"content": [{"type": "text", "text": "File not found."}], "isError": True}
+            content_read = target_path.read_text(encoding="utf-8")
+            return {"content": [{"type": "text", "text": content_read}]}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error reading file '%s': %s", path, e, exc_info=True)
+            return {
+                "content": [{"type": "text", "text": f"Failed to read file: {e}"}],
+                "isError": True,
+            }
 
 
 async def file_system_list_directory_tool(path: str | None = ".") -> dict[str, Any]:
     """List contents of a directory within the sandbox."""
-    try:
-        target_path = _resolve_and_verify_path(path or ".")
-        if not target_path.is_dir():
-            return {"content": [{"type": "text", "text": "Directory not found."}], "isError": True}
-        items = [
-            f"{item.name} ({'dir' if item.is_dir() else 'file'})" for item in target_path.iterdir()
-        ]
-        if not items:
-            return {"content": [{"type": "text", "text": f"Directory '{path}' is empty."}]}
-        return {"content": [{"type": "text", "text": json.dumps(items)}]}
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error listing directory '%s': %s", path, e, exc_info=True)
-        return {
-            "content": [{"type": "text", "text": f"Failed to list directory: {e}"}],
-            "isError": True,
-        }
+    async with tool_execution_monitor("file_system_list_directory"):
+        try:
+            target_path = _resolve_and_verify_path(path or ".")
+            if not target_path.is_dir():
+                return {
+                    "content": [{"type": "text", "text": "Directory not found."}],
+                    "isError": True,
+                }
+            items = [
+                f"{item.name} ({'dir' if item.is_dir() else 'file'})"
+                for item in target_path.iterdir()
+            ]
+            if not items:
+                return {"content": [{"type": "text", "text": f"Directory '{path}' is empty."}]}
+            return {"content": [{"type": "text", "text": json.dumps(items)}]}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error listing directory '%s': %s", path, e, exc_info=True)
+            return {
+                "content": [{"type": "text", "text": f"Failed to list directory: {e}"}],
+                "isError": True,
+            }
 
 
 # ---------- Shell tool (hardened) ----------
@@ -117,38 +129,42 @@ async def execute_shell_command_tool(
     command: str, working_directory: str | None = None
 ) -> dict[str, Any]:
     """Execute a shell command within the sandbox."""
-    try:
-        if not ALLOW_ARBITRARY_SHELL_COMMANDS:
+    async with tool_execution_monitor("execute_shell_command"):
+        try:
+            if not ALLOW_ARBITRARY_SHELL_COMMANDS:
+                return {
+                    "content": [
+                        {"type": "text", "text": "Shell commands are disabled by configuration."}
+                    ],
+                    "isError": True,
+                }
+            ok, reason = _is_command_allowed(command)
+            if not ok:
+                return {
+                    "content": [{"type": "text", "text": f"Rejected: {reason}"}],
+                    "isError": True,
+                }
+
+            cwd_for_command = _resolve_and_verify_path(working_directory or ".")
+            proc = await asyncio.create_subprocess_shell(
+                command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(cwd_for_command),
+            )
+            stdout, stderr = await proc.communicate()
+            results_data = {
+                "stdout": stdout.decode(errors="replace"),
+                "stderr": stderr.decode(errors="replace"),
+                "return_code": proc.returncode,
+            }
+            return {"content": [{"type": "text", "text": json.dumps(results_data, indent=2)}]}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.error("Error executing command '%s': %s", command, e, exc_info=True)
             return {
-                "content": [
-                    {"type": "text", "text": "Shell commands are disabled by configuration."}
-                ],
+                "content": [{"type": "text", "text": f"Failed to execute command: {e}"}],
                 "isError": True,
             }
-        ok, reason = _is_command_allowed(command)
-        if not ok:
-            return {"content": [{"type": "text", "text": f"Rejected: {reason}"}], "isError": True}
-
-        cwd_for_command = _resolve_and_verify_path(working_directory or ".")
-        proc = await asyncio.create_subprocess_shell(
-            command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd_for_command),
-        )
-        stdout, stderr = await proc.communicate()
-        results_data = {
-            "stdout": stdout.decode(errors="replace"),
-            "stderr": stderr.decode(errors="replace"),
-            "return_code": proc.returncode,
-        }
-        return {"content": [{"type": "text", "text": json.dumps(results_data, indent=2)}]}
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        logger.error("Error executing command '%s': %s", command, e, exc_info=True)
-        return {
-            "content": [{"type": "text", "text": f"Failed to execute command: {e}"}],
-            "isError": True,
-        }
 
 
 # ---------- LLM tools ----------
