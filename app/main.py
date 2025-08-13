@@ -22,6 +22,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
+
 # SecurityMiddleware not available in current Starlette version
 # We'll implement security headers manually
 from starlette.requests import Request
@@ -31,7 +32,6 @@ from starlette.routing import Mount, Route
 from app.docs_app import app as docs_asgi_app
 from app.logging_config import RequestIDMiddleware, configure_json_logging
 from app.mcp.adapters.api.rest_api_adapter import RestApiAdapter
-from app.monitoring import MonitoringMiddleware, record_auth_attempt, metrics_endpoint, get_health_metrics
 from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
 from app.mcp.core.adapter import AdapterManager, AdapterRegistry
@@ -47,6 +47,11 @@ from app.mcp.security.auth.authorization import (
     AuthorizationManager,
     ResourceType,
     create_admin_role,
+)
+from app.monitoring import (
+    MonitoringMiddleware,
+    metrics_endpoint,
+    record_auth_attempt,
 )
 from app.settings import settings
 from app.tools import ALL_TOOLS
@@ -367,7 +372,7 @@ async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Middleware for adding security headers to all responses."""
-    
+
     async def dispatch(
         self,
         request: Request,
@@ -375,7 +380,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         """Add security headers to the response."""
         response = await call_next(request)
-        
+
         # Add security headers
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
@@ -386,7 +391,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "default-src 'self'; script-src 'self' 'unsafe-inline'; "
             "style-src 'self' 'unsafe-inline'"
         )
-        
+
         return response
 
 

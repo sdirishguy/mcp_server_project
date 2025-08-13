@@ -6,6 +6,7 @@ and performance monitoring capabilities.
 """
 
 import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -62,10 +63,10 @@ logger = structlog.get_logger()
 class MonitoringMiddleware:
     """Middleware for collecting metrics and structured logging."""
 
-    def __init__(self, app):
+    def __init__(self, app: Any) -> None:
         self.app = app
 
-    async def __call__(self, scope, receive, send):
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -78,7 +79,7 @@ class MonitoringMiddleware:
         ACTIVE_CONNECTIONS.inc()
 
         # Create a custom send function to capture response status
-        async def send_wrapper(message):
+        async def send_wrapper(message: dict) -> None:
             if message["type"] == "http.response.start":
                 status = message["status"]
                 REQUEST_COUNT.labels(method=method, endpoint=path, status=status).inc()
@@ -116,7 +117,7 @@ class MonitoringMiddleware:
 
 
 @asynccontextmanager
-async def tool_execution_monitor(tool_name: str):
+async def tool_execution_monitor(tool_name: str) -> AsyncGenerator[None, None]:
     """Context manager for monitoring tool execution."""
     start_time = time.time()
     try:
@@ -131,7 +132,7 @@ async def tool_execution_monitor(tool_name: str):
         TOOL_EXECUTION_DURATION.labels(tool_name=tool_name).observe(duration)
 
 
-def record_auth_attempt(status: str):
+def record_auth_attempt(status: str) -> None:
     """Record authentication attempt."""
     AUTHENTICATION_ATTEMPTS.labels(status=status).inc()
 
