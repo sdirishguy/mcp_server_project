@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from typing import Any, TypedDict, cast
 
 from fastmcp import FastMCP
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.applications import Starlette
@@ -414,17 +414,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
             "/docs",  # Swagger UI + openapi.json + assets
         )
 
+        # Allow OPTIONS requests and public endpoints to pass through
         if request.method == "OPTIONS" or any(
             request.url.path.startswith(p) for p in public_prefixes
         ):
             return await call_next(request)
 
+        # For all other requests, check authentication
         auth_header = request.headers.get("authorization", "")
         token = ""
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
+
         if not token:
             return JSONResponse({"message": "Authentication required"}, status_code=401)
+
         try:
             mcp_components = request.app.state.mcp_components
             auth_result = await mcp_components["auth_manager"].validate_token(token)
@@ -447,8 +451,14 @@ middleware = [
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"],
         allow_headers=["*"],
+        expose_headers=[
+            "X-Request-ID",
+            "X-RateLimit-Limit",
+            "X-RateLimit-Remaining",
+            "X-RateLimit-Reset",
+        ],
     ),
     Middleware(SecurityHeadersMiddleware),
     Middleware(AuthMiddleware),
@@ -462,8 +472,30 @@ app = Starlette(  # type: ignore[arg-type]
     middleware=middleware,
 )
 
+
+# Custom rate limiting exception handler with proper headers
+async def custom_rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    """Custom rate limit handler with proper headers."""
+    response = JSONResponse(
+        {"error": "Rate limit exceeded", "retry_after": exc.retry_after}, status_code=429
+    )
+
+    # Add rate limiting headers
+    if exc.retry_after:
+        response.headers["Retry-After"] = str(exc.retry_after)
+
+    # Add rate limit info headers
+    response.headers["X-RateLimit-Limit"] = str(exc.limit)
+    response.headers["X-RateLimit-Remaining"] = "0"
+    response.headers["X-RateLimit-Reset"] = str(
+        int(exc.reset_time.timestamp()) if exc.reset_time else 0
+    )
+
+    return response
+
+
 # Add rate limiting exception handler
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
 
 
 if __name__ == "__main__":
