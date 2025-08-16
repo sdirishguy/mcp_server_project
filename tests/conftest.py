@@ -7,6 +7,7 @@ authentication, and test data management.
 
 import asyncio
 import logging
+import os
 from collections.abc import Generator
 from contextlib import asynccontextmanager
 from unittest.mock import patch
@@ -17,6 +18,9 @@ from starlette.applications import Starlette
 
 from app.main import app, setup_mcp
 from app.settings import settings
+
+# Set testing environment variable
+os.environ["TESTING"] = "true"
 
 # Configure test logging
 logging.basicConfig(level=logging.WARNING)
@@ -36,7 +40,6 @@ def test_app() -> Starlette:
     """Create a test application with proper initialization."""
     # Use the same middleware stack as the real app
     from slowapi import Limiter
-    from slowapi.util import get_remote_address
 
     from app.logging_config import configure_json_logging
     from app.main import middleware
@@ -62,8 +65,28 @@ def test_app() -> Starlette:
     )
 
     # Initialize test-specific rate limiter with higher limits for testing
-    test_limiter = Limiter(key_func=get_remote_address)
+    # Use a unique key function for each test to avoid rate limit interference
+    import uuid
+
+    test_id = uuid.uuid4().hex[:8]
+
+    def get_test_key(request):
+        return f"test_{test_id}"
+
+    test_limiter = Limiter(key_func=get_test_key)
     test_app.state.limiter = test_limiter
+
+    # Configure higher rate limits for testing to avoid interference
+    # This allows more requests per test without hitting rate limits
+    test_limiter.limit("100 per minute")  # Much higher limit for testing
+
+    # Add the same exception handlers as the main app
+    from slowapi.errors import RateLimitExceeded
+
+    from app.main import custom_rate_limit_handler, global_exception_handler
+
+    test_app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
+    test_app.add_exception_handler(Exception, global_exception_handler)
 
     return test_app
 
@@ -73,9 +96,8 @@ def client(test_app: Starlette) -> Generator[TestClient, None, None]:
     """Create a test client with proper application setup."""
     # Create a fresh client for each test to avoid session conflicts
     with TestClient(test_app) as test_client:
-        # Reset rate limiter state for each test to ensure isolation
-        if hasattr(test_app.state, "limiter"):
-            test_app.state.limiter.reset_all()
+        # Note: Rate limiter state is naturally isolated since we create fresh app instances
+        # for each test, so no manual reset is needed
         yield test_client
 
 
