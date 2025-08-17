@@ -60,15 +60,12 @@ structlog.configure(
 logger = structlog.get_logger()
 
 
-class MonitoringMiddleware:
-    """Middleware for collecting metrics and structured logging."""
+def MonitoringMiddleware(app: Any) -> Any:
+    """Middleware factory for collecting metrics and structured logging."""
 
-    def __init__(self, app: Any) -> None:
-        self.app = app
-
-    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+    async def middleware(scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
-            await self.app(scope, receive, send)
+            await app(scope, receive, send)
             return
 
         start_time = time.time()
@@ -96,7 +93,7 @@ class MonitoringMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, send_wrapper)
+            await app(scope, receive, send_wrapper)
         except Exception as e:
             # Log errors with structured data
             logger.error(
@@ -114,6 +111,8 @@ class MonitoringMiddleware:
 
             # Decrement active connections
             ACTIVE_CONNECTIONS.dec()
+
+    return middleware
 
 
 @asynccontextmanager

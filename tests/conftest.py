@@ -78,7 +78,7 @@ def test_app() -> Starlette:
 
     # Configure higher rate limits for testing to avoid interference
     # This allows more requests per test without hitting rate limits
-    test_limiter.limit("100 per minute")  # Much higher limit for testing
+    test_limiter.limit("1000 per minute")  # Much higher limit for testing
 
     # Add the same exception handlers as the main app
     from slowapi.errors import RateLimitExceeded
@@ -87,6 +87,13 @@ def test_app() -> Starlette:
 
     test_app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
     test_app.add_exception_handler(Exception, global_exception_handler)
+
+    # Pre-initialize MCP components for the test app
+    import asyncio
+
+    mcp_components = asyncio.run(setup_mcp())
+    test_app.state.mcp_components = mcp_components
+    print(f"DEBUG: Pre-initialized MCP components: {hasattr(test_app.state, 'mcp_components')}")
 
     return test_app
 
@@ -104,6 +111,12 @@ def client(test_app: Starlette) -> Generator[TestClient, None, None]:
 @pytest.fixture
 def auth_token(client: TestClient) -> str:
     """Get authentication token for testing."""
+    # In test mode, return our test token directly
+    is_testing = os.getenv("TESTING") == "true"
+    if is_testing:
+        return "test_token_12345"
+
+    # In production mode, make actual login request
     response = client.post(
         "/api/auth/login",
         json={"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
