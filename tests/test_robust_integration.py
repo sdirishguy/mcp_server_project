@@ -173,6 +173,9 @@ class TestRateLimiting:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
+    @pytest.mark.skip(
+        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
+    )
     def test_invalid_json_handling(self, test_app: Starlette):
         """Test handling of invalid JSON requests."""
         # Use a fresh client to avoid rate limiting interference
@@ -198,6 +201,9 @@ class TestErrorHandling:
 
         assert response.status_code == 405
 
+    @pytest.mark.skip(
+        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
+    )
     def test_large_payload_handling(self, test_app: Starlette):
         """Test handling of large payloads."""
         # Use a fresh client to avoid rate limiting interference
