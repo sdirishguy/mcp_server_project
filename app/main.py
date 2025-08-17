@@ -427,21 +427,27 @@ routes = [
 
 @asynccontextmanager
 async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+    """App lifespan for DB, cache, adapters, metrics, etc."""
     # Ensure JSON logging inside worker/reloader processes
     configure_json_logging(settings.LOG_LEVEL)
 
     # Initialize rate limiter
     starlette_app.state.limiter = limiter
 
-    if hasattr(mcp_app, "lifespan") and mcp_app.lifespan:
-        async with mcp_app.lifespan(starlette_app):
-            starlette_app.state.mcp_components = await setup_mcp()
-            logger.info("MCP components initialized and available via app.state.mcp_components")
+    # Initialize MCP components
+    starlette_app.state.mcp_components = await setup_mcp()
+    logger.info("MCP components initialized and available via app.state.mcp_components")
+
+    yield
+
+
+# Compose both lifespans and pass at construction time
+@asynccontextmanager
+async def combined_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+    """Combined lifespan that includes both app and FastMCP lifespans."""
+    async with app_lifespan(starlette_app):  # your startup/shutdown
+        async with mcp_app.lifespan(starlette_app):  # FastMCP session manager startup/shutdown
             yield
-    else:
-        starlette_app.state.mcp_components = await setup_mcp()
-        logger.info("MCP components initialized and available via app.state.mcp_components")
-        yield
 
 
 # ---- Middleware ----
@@ -572,7 +578,7 @@ middleware = [
 app = Starlette(  # type: ignore[arg-type]
     debug=True,
     routes=routes,
-    lifespan=app_lifespan,
+    lifespan=combined_lifespan,
     middleware=middleware,
 )
 

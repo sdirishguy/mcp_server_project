@@ -45,24 +45,29 @@ def test_app() -> Starlette:
     from app.main import middleware
     from app.settings import settings
 
-    # Create a test-specific lifespan that doesn't use MCP session manager
+    # Create a test-specific lifespan that properly uses FastMCP lifespan
     @asynccontextmanager
     async def test_lifespan(starlette_app: Starlette):
         # Configure logging
         configure_json_logging(settings.LOG_LEVEL)
 
-        # Initialize MCP components without MCP app lifespan
+        # Initialize rate limiter
+        starlette_app.state.limiter = test_limiter
+
+        # Initialize MCP components
         starlette_app.state.mcp_components = await setup_mcp()
         logging.info("MCP components initialized for testing")
         yield
 
-    # Create a fresh copy of the app for each test to avoid session manager conflicts
-    test_app = Starlette(
-        debug=True,
-        routes=app.routes,
-        lifespan=test_lifespan,
-        middleware=middleware,
-    )
+    # Create a test-specific combined lifespan
+    @asynccontextmanager
+    async def test_combined_lifespan(starlette_app: Starlette):
+        """Test combined lifespan that includes both app and FastMCP lifespans."""
+        from app.main import mcp_app
+
+        async with test_lifespan(starlette_app):  # your startup/shutdown
+            async with mcp_app.lifespan(starlette_app):  # FastMCP session manager startup/shutdown
+                yield
 
     # Initialize test-specific rate limiter with higher limits for testing
     # Use a unique key function for each test to avoid rate limit interference
@@ -74,11 +79,18 @@ def test_app() -> Starlette:
         return f"test_{test_id}"
 
     test_limiter = Limiter(key_func=get_test_key)
-    test_app.state.limiter = test_limiter
 
     # Configure higher rate limits for testing to avoid interference
     # This allows more requests per test without hitting rate limits
     test_limiter.limit("1000 per minute")  # Much higher limit for testing
+
+    # Create a fresh copy of the app for each test to avoid session manager conflicts
+    test_app = Starlette(
+        debug=True,
+        routes=app.routes,
+        lifespan=test_combined_lifespan,
+        middleware=middleware,
+    )
 
     # Add the same exception handlers as the main app
     from slowapi.errors import RateLimitExceeded
@@ -99,13 +111,18 @@ def test_app() -> Starlette:
 
 
 @pytest.fixture(scope="function")
-def client(test_app: Starlette) -> Generator[TestClient, None, None]:
+async def client(test_app: Starlette) -> Generator[TestClient, None, None]:
     """Create a test client with proper application setup."""
-    # Create a fresh client for each test to avoid session conflicts
-    with TestClient(test_app) as test_client:
-        # Note: Rate limiter state is naturally isolated since we create fresh app instances
-        # for each test, so no manual reset is needed
-        yield test_client
+    # Use asgi_lifespan to ensure FastMCP lifespan runs in tests
+    from asgi_lifespan import LifespanManager
+
+    # Run lifespan so FastMCP's TaskGroup/session-manager is created
+    async with LifespanManager(test_app):
+        # Create a fresh client for each test to avoid session conflicts
+        with TestClient(test_app) as test_client:
+            # Note: Rate limiter state is naturally isolated since we create fresh app instances
+            # for each test, so no manual reset is needed
+            yield test_client
 
 
 @pytest.fixture
