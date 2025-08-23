@@ -2,153 +2,230 @@
 Test configuration and fixtures for the MCP Server Project.
 
 This module provides proper test setup, including application initialization,
-authentication, and test data management.
+authentication, and test data management with proper FastMCP lifespan integration.
 """
 
 import asyncio
-import logging
+import json
 import os
-from collections.abc import Generator
-from contextlib import asynccontextmanager
-from unittest.mock import patch
+import tempfile
+from collections.abc import AsyncIterator
+from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
-from fastapi.testclient import TestClient
+from asgi_lifespan import LifespanManager
 from starlette.applications import Starlette
-
-from app.main import app, setup_mcp
-from app.settings import settings
-
-# Set testing environment variable
-os.environ["TESTING"] = "true"
-
-# Configure test logging
-logging.basicConfig(level=logging.WARNING)
-logging.getLogger("app").setLevel(logging.INFO)
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
+def temp_dir() -> Path:
+    """Create a temporary directory for test operations."""
+    with tempfile.TemporaryDirectory() as temp_dir_str:
+        yield Path(temp_dir_str)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_test_environment(temp_dir: Path) -> None:
+    """
+    Set env before the app is imported/created.
+    Tests import create_app() later to build a fresh app with these values.
+    """
+    os.environ["TESTING"] = "true"
+    os.environ["MCP_BASE_WORKING_DIR"] = str(temp_dir)
+    os.environ["AUDIT_LOG_FILE"] = str(temp_dir / "audit.log")
+    os.environ["LOG_LEVEL"] = "WARNING"
+    # Enable shell only if your tests need it; consider toggling per-test instead.
+    os.environ["ALLOW_ARBITRARY_SHELL_COMMANDS"] = "true"
 
 
 @pytest.fixture
 def test_app() -> Starlette:
-    """Create a test application with proper initialization."""
-    # Use the same middleware stack as the real app
-    from slowapi import Limiter
+    """Create a fresh app instance for each test (better isolation)."""
+    # Import create_app AFTER env is set to ensure fresh configuration
+    from app.main import create_app
 
-    from app.logging_config import configure_json_logging
-    from app.main import middleware
-    from app.settings import settings
-
-    # Create a test-specific lifespan that properly uses FastMCP lifespan
-    @asynccontextmanager
-    async def test_lifespan(starlette_app: Starlette):
-        # Configure logging
-        configure_json_logging(settings.LOG_LEVEL)
-
-        # Initialize rate limiter
-        starlette_app.state.limiter = test_limiter
-
-        # Initialize MCP components
-        starlette_app.state.mcp_components = await setup_mcp()
-        logging.info("MCP components initialized for testing")
-        yield
-
-    # Create a test-specific combined lifespan
-    @asynccontextmanager
-    async def test_combined_lifespan(starlette_app: Starlette):
-        """Test combined lifespan that includes both app and FastMCP lifespans."""
-        from app.main import mcp_app
-
-        async with test_lifespan(starlette_app):  # your startup/shutdown
-            async with mcp_app.lifespan(starlette_app):  # FastMCP session manager startup/shutdown
-                yield
-
-    # Initialize test-specific rate limiter with higher limits for testing
-    # Use a unique key function for each test to avoid rate limit interference
-    import uuid
-
-    test_id = uuid.uuid4().hex[:8]
-
-    def get_test_key(request):
-        return f"test_{test_id}"
-
-    test_limiter = Limiter(key_func=get_test_key)
-
-    # Configure higher rate limits for testing to avoid interference
-    # This allows more requests per test without hitting rate limits
-    test_limiter.limit("1000 per minute")  # Much higher limit for testing
-
-    # Create a fresh copy of the app for each test to avoid session manager conflicts
-    test_app = Starlette(
-        debug=True,
-        routes=app.routes,
-        lifespan=test_combined_lifespan,
-        middleware=middleware,
-    )
-
-    # Add the same exception handlers as the main app
-    from slowapi.errors import RateLimitExceeded
-
-    from app.main import custom_rate_limit_handler, global_exception_handler
-
-    test_app.add_exception_handler(RateLimitExceeded, custom_rate_limit_handler)
-    test_app.add_exception_handler(Exception, global_exception_handler)
-
-    # Pre-initialize MCP components for the test app
-    import asyncio
-
-    mcp_components = asyncio.run(setup_mcp())
-    test_app.state.mcp_components = mcp_components
-    print(f"DEBUG: Pre-initialized MCP components: {hasattr(test_app.state, 'mcp_components')}")
-
-    return test_app
-
-
-@pytest.fixture(scope="function")
-def client(test_app: Starlette) -> TestClient:
-    """Create a test client with proper application setup."""
-    # For now, return a simple TestClient without lifespan management
-    # This avoids the FastMCP lifespan issues while keeping core functionality tests working
-    return TestClient(test_app)
+    return create_app()
 
 
 @pytest.fixture
-def auth_token(client: TestClient) -> str:
-    """Get authentication token for testing."""
-    # In test mode, return our test token directly
-    is_testing = os.getenv("TESTING") == "true"
-    if is_testing:
-        return "test_token_12345"
+async def client(test_app: Starlette) -> AsyncIterator[httpx.AsyncClient]:
+    """
+    Use LifespanManager with ASGITransport for httpx 0.28.1.
+    This ensures the FastMCP session manager is initialized before requests.
+    """
+    async with LifespanManager(test_app):
+        transport = httpx.ASGITransport(app=test_app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+            timeout=30.0,
+            headers={"Accept": "application/json, text/event-stream"},
+        ) as c:
+            yield c
 
-    # In production mode, make actual login request
-    response = client.post(
+
+@pytest.fixture
+async def auth_token(client: httpx.AsyncClient) -> str:
+    """Obtain bearer token from your login endpoint."""
+    resp = await client.post(
         "/api/auth/login",
-        json={"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
+        json={"username": "admin", "password": "admin123"},
     )
-
-    if response.status_code == 200:
-        return response.json().get("token", "")
-    else:
-        # If login fails, return empty token (tests will handle this)
-        return ""
+    assert resp.status_code == 200, resp.text
+    return resp.json()["token"]
 
 
 @pytest.fixture
-def authenticated_client(client: TestClient, auth_token: str) -> TestClient:
-    """Create a test client with authentication headers."""
-    client.headers.update({"Authorization": f"Bearer {auth_token}"})
-    return client
+def auth_headers(auth_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {auth_token}"}
 
 
+@pytest.fixture
+def jsonrpc_headers() -> dict[str, str]:
+    """
+    Headers that satisfy strict JSON-RPC content negotiation in your MCP endpoint.
+    FastMCP requires both application/json and text/event-stream in Accept header.
+    """
+    return {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+
+
+@pytest.fixture
+async def mcp_session_headers(
+    client: httpx.AsyncClient,
+    jsonrpc_headers: dict[str, str],
+) -> dict[str, str]:
+    """
+    Obtain FastMCP session header and wait for FastMCP to be fully initialized.
+    """
+    session_id = None
+
+    # First, try to get session ID from GET request
+    for attempt in range(20):
+        try:
+            resp = await client.get("/mcp/mcp.json/", headers=jsonrpc_headers)
+            session_id = resp.headers.get("mcp-session-id")
+            if session_id:
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+
+    # If GET didn't work, try POST to get session ID
+    if not session_id:
+        for attempt in range(20):
+            try:
+                payload = {"jsonrpc": "2.0", "method": "tools/list", "id": 0}
+                resp = await client.post(
+                    "/mcp/mcp.json/",
+                    headers=jsonrpc_headers,
+                    content=json.dumps(payload),
+                )
+                session_id = resp.headers.get("mcp-session-id")
+                if session_id:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+
+    assert session_id, "Failed to obtain mcp-session-id after retries"
+
+    # Now wait for FastMCP to be fully initialized by polling until we get a proper response
+    ping_payload = {"jsonrpc": "2.0", "method": "tools/list", "id": 0}
+    for attempt in range(50):  # Increased retries
+        try:
+            ping = await client.post(
+                "/mcp/mcp.json/",
+                headers={**jsonrpc_headers, "mcp-session-id": session_id},
+                content=json.dumps(ping_payload),
+            )
+            # If we get a proper response (even if 401), FastMCP is ready
+            if ping.status_code in (200, 401) and ping.content:
+                try:
+                    ping.json()  # Verify it's valid JSON
+                    break
+                except json.JSONDecodeError:
+                    pass  # Not ready yet
+        except Exception:
+            pass  # Connection errors are expected during startup
+        await asyncio.sleep(0.1)  # Longer sleep to give FastMCP time
+
+    return {"mcp-session-id": session_id}
+
+
+# Alternative client using LifespanManager
+@pytest.fixture
+async def client_alt(test_app: Starlette) -> AsyncIterator[httpx.AsyncClient]:
+    # Using LifespanManager for httpx 0.28.1
+    async with LifespanManager(test_app):
+        transport = httpx.ASGITransport(app=test_app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            timeout=30.0,
+            headers={"Accept": "application/json, text/event-stream"},
+        ) as c:
+            yield c
+
+
+# Helpers used by tests below
+class TestResponse:
+    """Helper for JSON-RPC tool responses."""
+
+    def __init__(self, response: httpx.Response):
+        self.response = response
+        self.status_code = response.status_code
+        if response.status_code == 204:
+            self.data = {}
+        else:
+            try:
+                self.data = response.json()
+            except Exception:
+                # Preserve raw text for better error messages if body isn't JSON.
+                self.data = {
+                    "_raw_text": response.text,
+                    "_content_type": response.headers.get("content-type"),
+                }
+
+    def assert_success(self) -> dict[str, Any]:
+        assert self.status_code == 200, f"Expected 200, got {self.status_code}: {self.data}"
+        assert isinstance(self.data, dict) and "result" in self.data, (
+            f"No result in response: {self.data}"
+        )
+        assert not self.data["result"].get("isError", False), f"Tool reported error: {self.data}"
+        return self.data["result"]
+
+    def assert_error(self, expected_status: int = 200) -> dict[str, Any]:
+        assert self.status_code == expected_status, (
+            f"Expected {expected_status}, got {self.status_code}"
+        )
+        if expected_status == 200:
+            assert "result" in self.data, f"No result in response: {self.data}"
+            assert self.data["result"].get("isError", False), f"Expected tool error: {self.data}"
+        return self.data.get("result", self.data)
+
+
+@pytest.fixture
+def test_response_helper():
+    return TestResponse
+
+
+@pytest.fixture
+def anyio_backend():
+    """Keep async test execution predictable."""
+    return "asyncio"
+
+
+# Legacy fixtures for backward compatibility with existing tests
 @pytest.fixture
 def mock_mcp_server():
     """Mock MCP server to avoid startup issues in tests."""
+    from unittest.mock import patch
+
     with patch("app.main.mcp_app") as mock_app:
         # Mock the MCP app to prevent actual server startup
         mock_app.lifespan = None
@@ -159,6 +236,8 @@ def mock_mcp_server():
 @pytest.fixture
 def mock_file_system():
     """Mock file system operations for testing."""
+    from unittest.mock import patch
+
     with patch("app.tools.file_system_tools") as mock_fs:
         # Mock file system operations
         mock_fs.list_directory.return_value = {"files": ["test.txt"], "directories": ["test_dir"]}
@@ -170,6 +249,8 @@ def mock_file_system():
 @pytest.fixture
 def mock_shell_commands():
     """Mock shell command execution for testing."""
+    from unittest.mock import patch
+
     with patch("app.tools.shell_tools") as mock_shell:
         # Mock shell command execution
         mock_shell.execute_shell_command.return_value = {
@@ -183,6 +264,8 @@ def mock_shell_commands():
 @pytest.fixture
 def test_data():
     """Provide test data for various test scenarios."""
+    from app.settings import settings
+
     return {
         "valid_user": {"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
         "invalid_user": {"username": "invalid", "password": "invalid"},

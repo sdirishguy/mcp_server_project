@@ -376,12 +376,18 @@ class ToolEntry(TypedDict):
     handler: Callable[..., Awaitable[dict[str, Any]]]
 
 
-mcp: FastMCP = FastMCP("MCP Server", stateless_http=True)
-tools_typed: list[ToolEntry] = cast("list[ToolEntry]", ALL_TOOLS)
-for tool in tools_typed:
-    mcp.tool(name=tool["name"], description=tool["description"])(tool["handler"])
-logger.info("Registered %d tools with FastMCP.", len(tools_typed))
-mcp_app = mcp.http_app(path="/mcp.json/")
+def create_fastmcp_app() -> Starlette:
+    """Create a fresh FastMCP app for testing."""
+    # IMPORTANT: do NOT pass deprecated args like `stateless_http=...` here
+    mcp: FastMCP = FastMCP("MCP Server")
+    tools_typed: list[ToolEntry] = cast("list[ToolEntry]", ALL_TOOLS)
+    for tool in tools_typed:
+        mcp.tool(name=tool["name"], description=tool["description"])(tool["handler"])
+    logger.info("Registered %d tools with FastMCP.", len(tools_typed))
+    return mcp.http_app(path="/mcp.json/")
+
+
+# FastMCP app will be created fresh in create_app() for proper lifespan management
 
 
 # ------------------- Routing -------------------
@@ -406,20 +412,7 @@ async def test_error_endpoint(request: Request) -> JSONResponse:
         return JSONResponse({"error": f"Test error: {str(e)}"}, status_code=500)
 
 
-routes = [
-    Mount("/docs", app=docs_asgi_app),
-    Route("/metrics", metrics_endpoint),
-    Route("/api/auth/login", login, methods=["POST"]),
-    Route("/api/test/error", test_error_endpoint, methods=["POST"]),  # Dedicated test endpoint
-    Route("/api/adapters/{adapter_type}", create_adapter, methods=["POST"]),
-    Route("/api/adapters/{instance_id}/execute", execute_request, methods=["POST"]),
-    Route("/api/protected", protected_route),
-    Route("/whoami", whoami),
-    Route("/health", health),
-    Mount("/mcp", app=mcp_app),
-    Mount("/api", app=mcp_app),  # exposes /api/mcp.json/
-    Route("/{path:path}", not_found_handler),  # Catch-all for 404s
-]
+# Routes will be defined in create_app() to use the fresh FastMCP instance
 
 
 # --- Lifespan handler ---
@@ -441,13 +434,7 @@ async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
     yield
 
 
-# Compose both lifespans and pass at construction time
-@asynccontextmanager
-async def combined_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
-    """Combined lifespan that includes both app and FastMCP lifespans."""
-    async with app_lifespan(starlette_app):  # your startup/shutdown
-        async with mcp_app.lifespan(starlette_app):  # FastMCP session manager startup/shutdown
-            yield
+# This function is now handled within create_app() for proper lifespan management
 
 
 # ---- Middleware ----
@@ -574,13 +561,55 @@ middleware = [
     Middleware(AuthMiddleware),
 ]
 
-# mypy has trouble with Starlette's lifespan protocol; the app works as intended.
-app = Starlette(  # type: ignore[arg-type]
-    debug=True,
-    routes=routes,
-    lifespan=combined_lifespan,
-    middleware=middleware,
-)
+
+def create_app() -> Starlette:
+    """
+    Build a fresh Starlette app with proper FastMCP integration.
+    The key is to ensure FastMCP's lifespan runs before any requests.
+    """
+    # Build FastMCP instance and get its ASGI app
+    mcp: FastMCP = FastMCP("MCP Server")
+    tools_typed: list[ToolEntry] = cast("list[ToolEntry]", ALL_TOOLS)
+    for tool in tools_typed:
+        mcp.tool(name=tool["name"], description=tool["description"])(tool["handler"])
+    logger.info("Registered %d tools with FastMCP.", len(tools_typed))
+
+    # Get the ASGI app from FastMCP (this has the proper lifespan)
+    mcp_app = mcp.http_app(path="/mcp.json/")
+
+    @asynccontextmanager
+    async def combined_lifespan(parent_app: Any) -> AsyncIterator[None]:
+        # First, start our own app's lifespan
+        async with app_lifespan(parent_app):
+            # Then run the FastMCP sub-app's lifespan, using the *parent* app for state
+            # This is what actually starts the StreamableHTTPSessionManager
+            async with mcp_app.lifespan(parent_app):
+                yield
+
+    routes = [
+        Mount("/docs", app=docs_asgi_app),
+        Route("/metrics", metrics_endpoint),
+        Route("/api/auth/login", login, methods=["POST"]),
+        Route("/api/test/error", test_error_endpoint, methods=["POST"]),
+        Route("/api/adapters/{adapter_type}", create_adapter, methods=["POST"]),
+        Route("/api/adapters/{instance_id}/execute", execute_request, methods=["POST"]),
+        Route("/api/protected", protected_route),
+        Route("/whoami", whoami),
+        Route("/health", health),
+        Mount("/mcp", app=mcp_app),  # do not mount twice
+        Route("/{path:path}", not_found_handler),
+    ]
+
+    return Starlette(  # type: ignore[arg-type]
+        debug=True,
+        routes=routes,
+        lifespan=combined_lifespan,
+        middleware=middleware,
+    )
+
+
+# Keep module-global for prod/uvicorn usage
+app = create_app()
 
 # Note: slowapi Limiter doesn't need init_app for Starlette
 

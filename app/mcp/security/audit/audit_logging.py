@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -65,7 +65,7 @@ class AuditEvent:
         self.resource_type = resource_type
         self.resource_id = resource_id
         self.details = details or {}
-        self.timestamp = timestamp or datetime.utcnow()
+        self.timestamp = timestamp or datetime.now(UTC)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary representation.
