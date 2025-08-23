@@ -32,6 +32,7 @@ node_modules/
 # Logs
 *.log
 .env
+audit.log
 
 # Temporary files
 =*
