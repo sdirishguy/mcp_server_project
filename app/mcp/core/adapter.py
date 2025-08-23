@@ -28,15 +28,9 @@ class AdapterMetadata(BaseModel):
     name: str = Field(..., description="Name of the adapter")
     version: str = Field(..., description="Version of the adapter")
     description: str = Field(..., description="Description of the adapter")
-    capabilities: list[AdapterCapability] = Field(
-        ..., description="Capabilities supported by the adapter"
-    )
-    schema_supported: bool = Field(
-        False, description="Whether the adapter supports schema operations"
-    )
-    authentication_required: bool = Field(
-        False, description="Whether authentication is required for this adapter"
-    )
+    capabilities: list[AdapterCapability] = Field(..., description="Capabilities supported by the adapter")
+    schema_supported: bool = Field(False, description="Whether the adapter supports schema operations")
+    authentication_required: bool = Field(False, description="Whether authentication is required for this adapter")
 
 
 class DataRequest(BaseModel):
@@ -53,9 +47,7 @@ class DataResponse(BaseModel):
     """A response from a data request."""
 
     data: Any = Field(..., description="The data returned from the request")
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Metadata about the response"
-    )
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata about the response")
     status_code: int = Field(200, description="Status code of the response")
     error: str | None = Field(None, description="Error message if any")
 
@@ -159,9 +151,7 @@ class AdapterManager:
         self._registry = registry
         self._instances: dict[str, MCPAdapter] = {}
 
-    async def create_adapter(
-        self, adapter_id: str, instance_id: str, config: dict[str, Any]
-    ) -> str:
+    async def create_adapter(self, adapter_id: str, instance_id: str, config: dict[str, Any]) -> str:
         """Create and initialize an adapter instance.
 
         Args:

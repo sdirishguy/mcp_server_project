@@ -5,207 +5,221 @@ This module provides interfaces and implementations for recording
 security-relevant events for compliance and forensics.
 """
 
-import json
+from __future__ import annotations
+
 import logging
 import os
 from abc import ABC, abstractmethod
-from datetime import datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
+__all__ = [
+    "AuditEventType",
+    "AuditEventOutcome",
+    "AuditEvent",
+    "AuditLogger",
+    "StdoutAuditLogger",
+    "FileAuditLogger",
+    "create_default_audit_logger",
+    "get_audit_logger",
+]
+
+# -----------------------------------------------------------------------------
+# Types
+# -----------------------------------------------------------------------------
+
 
 class AuditEventType(str, Enum):
-    """Types of audit events."""
-
-    AUTHENTICATION = "authentication"
-    AUTHORIZATION = "authorization"
-    DATA_ACCESS = "data_access"
-    CONFIGURATION = "configuration"
-    SYSTEM = "system"
-
-
-class AuditEventOutcome(str, Enum):
-    """Possible outcomes of audit events."""
-
-    SUCCESS = "success"
-    FAILURE = "failure"
+    LOGIN = "auth.login"
+    LOGOUT = "auth.logout"
+    ADAPTER_CREATE = "adapter.create"
+    ADAPTER_FETCH = "adapter.fetch"
+    TOOL_EXECUTE = "tool.execute"
+    HTTP_REQUEST = "http.request"
+    HTTP_RESPONSE = "http.response"
     ERROR = "error"
 
 
+class AuditEventOutcome(str, Enum):
+    SUCCESS = "success"
+    FAILURE = "failure"
+    
+
+
+@dataclass(init=False)
 class AuditEvent:
-    """Represents an audit event."""
+    """Back-compat container used by existing callers/tests.
+
+    Accepts new `event_type=` or legacy `event_action=`.
+    Maps `user_id`/`username` to `actor`.
+    Any extra/unknown kwargs are merged into `context`.
+    """
+    event_type: AuditEventType | str
+    actor: str | None
+    outcome: AuditEventOutcome | str | None
+    context: dict[str, Any] | None
 
     def __init__(
         self,
-        event_type: AuditEventType,
-        event_action: str,
-        outcome: AuditEventOutcome,
-        user_id: str | None = None,
-        resource_type: str | None = None,
-        resource_id: str | None = None,
-        details: dict[str, Any] | None = None,
-        timestamp: datetime | None = None,
-    ):
-        """Initialize an audit event.
+        *,
+        event_type: AuditEventType | str | None = None,
+        event_action: AuditEventType | str | None = None,  # legacy
+        actor: str | None = None,
+        user_id: str | None = None,                        # legacy -> actor
+        username: str | None = None,                       # legacy -> actor
+        outcome: AuditEventOutcome | str | None = None,
+        context: dict[str, Any] | None = None,
+        details: dict[str, Any] | str | None = None,       # legacy, merged into context
+        **extra: Any,                                      # capture any other legacy fields
+    ) -> None:
+        self.event_type = event_type or event_action or AuditEventType.ERROR
+        self.actor = actor or user_id or username
 
-        Args:
-            event_type: Type of event
-            event_action: Specific action being performed
-            outcome: Outcome of the event
-            user_id: ID of the user performing the action
-            resource_type: Type of resource being accessed
-            resource_id: ID of the resource being accessed
-            details: Additional details about the event
-            timestamp: Time of the event
-        """
-        self.event_type = event_type
-        self.event_action = event_action
+        ctx: dict[str, Any] = {}
+        if context:
+            ctx.update(context)
+        if details is not None:
+            # keep structure if dict; otherwise store as string
+            ctx.setdefault("details", details if isinstance(details, dict) else str(details))
+        # fold any unknown legacy kwargs into context (without clobbering)
+        for k, v in extra.items():
+            ctx.setdefault(k, v)
+
         self.outcome = outcome
-        self.user_id = user_id
-        self.resource_type = resource_type
-        self.resource_id = resource_id
-        self.details = details or {}
-        self.timestamp = timestamp or datetime.utcnow()
+        self.context = ctx or None
 
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary representation.
+    def to_log_args(self) -> tuple[str, str | None, dict[str, Any] | None]:
+        ctx = dict(self.context or {})
+        if self.outcome is not None:
+            ctx.setdefault("outcome", str(self.outcome))
+        return (str(self.event_type), self.actor, ctx or None)
 
-        Returns:
-            Dict[str, Any]: Dictionary representation of the event
-        """
-        return {
-            "event_type": self.event_type,
-            "event_action": self.event_action,
-            "outcome": self.outcome,
-            "user_id": self.user_id,
-            "resource_type": self.resource_type,
-            "resource_id": self.resource_id,
-            "details": self.details,
-            "timestamp": self.timestamp.isoformat(),
-        }
+
+
+# -----------------------------------------------------------------------------
+# Interface
+# -----------------------------------------------------------------------------
 
 
 class AuditLogger(ABC):
-    """Interface for audit loggers."""
+    """Abstract audit logger interface."""
 
     @abstractmethod
-    async def log_event(self, event: AuditEvent) -> None:
-        """Log an audit event.
+    def log(
+        self,
+        event: AuditEventType | str,
+        *,
+        actor: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:  # noqa: D401
+        ...
 
-        Args:
-            event: The audit event to log
-        """
-        raise NotImplementedError
+    async def log_event(
+        self,
+        event: AuditEvent | AuditEventType | str,
+        *,
+        actor: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        """Back-compat async helper so callers can `await audit_logger.log_event(...)`."""
+        if isinstance(event, AuditEvent):
+            ev, ac, ctx = event.to_log_args()
+            self.log(ev, actor=ac, context=ctx)
+        else:
+            self.log(event, actor=actor, context=context)
+
+
+# -----------------------------------------------------------------------------
+# Implementations
+# -----------------------------------------------------------------------------
+
+
+class StdoutAuditLogger(AuditLogger):
+    def __init__(self, logger: logging.Logger | None = None) -> None:
+        self._logger = logger or logging.getLogger("audit")
+
+    def log(
+        self,
+        event: AuditEventType | str,
+        *,
+        actor: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        payload = {
+            "ts": int(datetime.now(UTC).timestamp()),
+            "event": str(event),
+            "actor": actor or "system",
+            "context": context or {},
+        }
+        self._logger.info("%s", payload)
 
 
 class FileAuditLogger(AuditLogger):
-    """Audit logger that writes to a file."""
+    def __init__(self, log_file: str) -> None:
+        self._logger = logging.getLogger("audit.file")
+        self._logger.setLevel(logging.INFO)
 
-    def __init__(self, log_file: str):
-        """Initialize the file audit logger.
-
-        Args:
-            log_file: Path to the log file
-        """
-        self._log_file = log_file
-        self._logger = logging.getLogger("mcp.audit")
-
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
-
-        # Configure file handler
         handler = logging.FileHandler(log_file)
         formatter = logging.Formatter("%(message)s")
         handler.setFormatter(formatter)
 
-        self._logger.addHandler(handler)
-        self._logger.setLevel(logging.INFO)
+        # Avoid duplicate handlers for the same file
+        same_file = any(
+            isinstance(h, logging.FileHandler)
+            and getattr(h, "baseFilename", None) == handler.baseFilename
+            for h in self._logger.handlers
+        )
+        if not same_file:
+            self._logger.addHandler(handler)
 
-    async def log_event(self, event: AuditEvent) -> None:
-        """Log an audit event to file.
-
-        Args:
-            event: The audit event to log
-        """
-        event_json = json.dumps(event.to_dict())
-        self._logger.info(event_json)
-
-
-class ConsoleAuditLogger(AuditLogger):
-    """Audit logger that writes to the console."""
-
-    def __init__(self):
-        """Initialize the console audit logger."""
-        self._logger = logging.getLogger("mcp.audit.console")
-
-        # Configure console handler
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-        handler.setFormatter(formatter)
-
-        self._logger.addHandler(handler)
-        self._logger.setLevel(logging.INFO)
-
-    async def log_event(self, event: AuditEvent) -> None:
-        """Log an audit event to console.
-
-        Args:
-            event: The audit event to log
-        """
-        # Build compact human-readable summary; full JSON is handled by FileAuditLogger.
-        log_message = f"{event.event_type}:{event.event_action} - Outcome: {event.outcome}"
-
-        if event.user_id:
-            log_message += f" - User: {event.user_id}"
-
-        if event.resource_type and event.resource_id:
-            log_message += f" - Resource: {event.resource_type}:{event.resource_id}"
-
-        # Log at appropriate level based on outcome
-        if event.outcome == AuditEventOutcome.SUCCESS:
-            self._logger.info(log_message)
-        elif event.outcome == AuditEventOutcome.FAILURE:
-            self._logger.warning(log_message)
-        else:  # ERROR
-            self._logger.error(log_message)
+    def log(
+        self,
+        event: AuditEventType | str,
+        *,
+        actor: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        payload = {
+            "ts": int(datetime.now(UTC).timestamp()),
+            "event": str(event),
+            "actor": actor or "system",
+            "context": context or {},
+        }
+        self._logger.info("%s", payload)
 
 
-class MultiAuditLogger(AuditLogger):
-    """Audit logger that forwards events to multiple loggers."""
+# -----------------------------------------------------------------------------
+# Factory / accessor
+# -----------------------------------------------------------------------------
 
-    def __init__(self, loggers: list[AuditLogger]):
-        """Initialize the multi audit logger.
-
-        Args:
-            loggers: List of audit loggers to use
-        """
-        self._loggers = loggers
-
-    async def log_event(self, event: AuditEvent) -> None:
-        """Log an audit event to all loggers.
-
-        Args:
-            event: The audit event to log
-        """
-        for logger in self._loggers:
-            await logger.log_event(event)
-
-    def add_logger(self, logger: AuditLogger) -> None:
-        """Add a logger to the multi logger.
-
-        Args:
-            logger: The audit logger to add
-        """
-        self._loggers.append(logger)
+_DEF_LOGGER: AuditLogger | None = None
 
 
-def create_default_audit_logger(log_file: str = "audit.log") -> AuditLogger:
-    """Create a default audit logger that logs to both file and console.
+def create_default_audit_logger(log_file: str | None = None) -> AuditLogger:
+    """Create and return the default audit logger.
 
-    Args:
-        log_file: Path to the log file
-
-    Returns:
-        AuditLogger: The default audit logger
+    If `log_file` is provided, use a file-backed logger.
+    Else, check AUDIT_LOG_FILE env var. Otherwise, stdout.
     """
-    return MultiAuditLogger([FileAuditLogger(log_file), ConsoleAuditLogger()])
+    path = log_file or os.getenv("AUDIT_LOG_FILE")
+    if path:
+        return FileAuditLogger(path)
+    return StdoutAuditLogger()
+
+
+def get_audit_logger() -> AuditLogger:
+    global _DEF_LOGGER
+    if _DEF_LOGGER is None:
+        _DEF_LOGGER = create_default_audit_logger()
+    return _DEF_LOGGER
+
+
+# -----------------------------------------------------------------------------
+# Legacy constant names to satisfy older code (back-compat shims)
+# -----------------------------------------------------------------------------
+
+# Some older call sites refer to these; map them to closest modern events.
+AuditEventType.AUTHENTICATION = AuditEventType.LOGIN  # type: ignore[attr-defined]
+AuditEventType.AUTHORIZATION = AuditEventType.LOGIN   # type: ignore[attr-defined]

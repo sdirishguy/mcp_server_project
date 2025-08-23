@@ -35,3 +35,8 @@ node_modules/
 
 # Temporary files
 =*
+shared_host_folder/
+.pytest_cache/
+__pycache__/
+*.pyc
+.coverage

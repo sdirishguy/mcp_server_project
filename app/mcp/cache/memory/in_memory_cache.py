@@ -381,9 +381,7 @@ class CacheManager(Generic[T]):
             "l2_hits": self._stats["l2_hits"],
             "misses": self._stats["misses"],
             "writes": self._stats["writes"],
-            "total_requests": self._stats["l1_hits"]
-            + self._stats["l2_hits"]
-            + self._stats["misses"],
+            "total_requests": self._stats["l1_hits"] + self._stats["l2_hits"] + self._stats["misses"],
         }
 
         if self._l2_cache:
@@ -393,9 +391,7 @@ class CacheManager(Generic[T]):
         # Calculate hit rates
         total_requests = stats["total_requests"]
         if total_requests > 0:
-            stats["overall_hit_rate"] = (
-                self._stats["l1_hits"] + self._stats["l2_hits"]
-            ) / total_requests
+            stats["overall_hit_rate"] = (self._stats["l1_hits"] + self._stats["l2_hits"]) / total_requests
             stats["l1_hit_rate"] = self._stats["l1_hits"] / total_requests
             stats["l2_hit_rate"] = self._stats["l2_hits"] / total_requests if self._l2_cache else 0
         else:

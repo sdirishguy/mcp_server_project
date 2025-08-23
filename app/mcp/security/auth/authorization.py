@@ -60,9 +60,7 @@ class Permission:
         if len(parts) != 3:
             raise ValueError(f"Invalid permission format: {permission_str}")
 
-        return cls(
-            resource_type=ResourceType(parts[0]), resource_id=parts[1], action=Action(parts[2])
-        )
+        return cls(resource_type=ResourceType(parts[0]), resource_id=parts[1], action=Action(parts[2]))
 
     def to_string(self) -> str:
         """Convert to string representation.

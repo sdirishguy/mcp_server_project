@@ -42,7 +42,11 @@ from app.mcp.security.audit.audit_logging import (
     AuditEventType,
     create_default_audit_logger,
 )
-from app.mcp.security.auth.authentication import AuthenticationManager, InMemoryAuthProvider
+from app.mcp.security.auth.authentication import (
+    AuthenticationManager,
+    InMemoryAuthProvider,
+    JWTAuthProvider,
+)
 from app.mcp.security.auth.authorization import (
     Action,
     AuthorizationManager,
@@ -88,10 +92,29 @@ class User:
 async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
-    auth_provider = InMemoryAuthProvider()
-    # Bootstrap creds from .env via Settings
-    auth_provider.add_user(settings.ADMIN_USERNAME, settings.ADMIN_PASSWORD, roles=["admin"])
-    auth_manager.register_provider("local", auth_provider)
+    # Use JWT for production and in‑memory fallback for tests or if JWT secret is default
+    # When JWT_SECRET is set to a non‑trivial value, prefer JWT auth provider.
+    if settings.JWT_SECRET and settings.JWT_SECRET != "change-me":
+        jwt_provider = JWTAuthProvider(
+            secret=settings.JWT_SECRET,
+            expiry_minutes=settings.JWT_EXPIRY_MINUTES,
+        )
+        jwt_provider.add_user(
+            settings.ADMIN_USERNAME,
+            settings.ADMIN_PASSWORD,
+            roles=["admin"],
+            permissions=["*"] if settings.ENVIRONMENT == "development" else [],
+        )
+        auth_manager.register_provider("jwt", jwt_provider)
+    else:
+        # Fallback to in‑memory auth provider for development/testing
+        auth_provider = InMemoryAuthProvider()
+        auth_provider.add_user(
+            settings.ADMIN_USERNAME,
+            settings.ADMIN_PASSWORD,
+            roles=["admin"],
+        )
+        auth_manager.register_provider("local", auth_provider)
 
     authz_manager = AuthorizationManager()
     authz_manager.add_role(create_admin_role())
@@ -174,8 +197,12 @@ async def login(request: Request) -> JSONResponse:
     try:
         credentials = await request.json()
 
-        auth_result = await mcp_components["auth_manager"].authenticate(
-            provider_id="local",
+        # Determine which auth provider to use. Prefer JWT provider if registered, otherwise use first provider.
+        auth_manager = mcp_components["auth_manager"]
+        provider_ids = auth_manager.get_provider_ids()
+        provider_id = "jwt" if "jwt" in provider_ids else (provider_ids[0] if provider_ids else "local")
+        auth_result = await auth_manager.authenticate(
+            provider_id=provider_id,
             credentials=credentials,
         )
         if auth_result.authenticated:
@@ -344,9 +371,7 @@ async def protected_route(request: Request) -> JSONResponse:
     user = getattr(request.state, "user", None)
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    return JSONResponse(
-        {"message": "This is a protected route", "user": user.user_id, "roles": user.roles}
-    )
+    return JSONResponse({"message": "This is a protected route", "user": user.user_id, "roles": user.roles})
 
 
 async def whoami(request: Request) -> JSONResponse:
@@ -471,8 +496,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'"
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
         )
 
         return response
@@ -498,9 +522,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
         # Allow OPTIONS requests and public endpoints to pass through
-        if request.method == "OPTIONS" or any(
-            request.url.path.startswith(p) for p in public_prefixes
-        ):
+        if request.method == "OPTIONS" or any(request.url.path.startswith(p) for p in public_prefixes):
             return await call_next(request)
 
         # Check if this is a known route that requires authentication
@@ -532,9 +554,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # Create a mock user for testing
                     from app.main import User
 
-                    request.state.user = User(
-                        user_id="test_user", roles=["admin"], permissions=["read", "write"]
-                    )
+                    request.state.user = User(user_id="test_user", roles=["admin"], permissions=["read", "write"])
                     return await call_next(request)
                 else:
                     return JSONResponse({"message": "Invalid token"}, status_code=401)
@@ -596,9 +616,7 @@ async def custom_rate_limit_handler(request: Request, exc: Exception) -> Respons
     # Get retry_after from the exception if available, otherwise use a default
     retry_after = getattr(exc, "retry_after", 60)  # Default to 60 seconds
 
-    response = JSONResponse(
-        {"error": "Rate limit exceeded", "retry_after": retry_after}, status_code=429
-    )
+    response = JSONResponse({"error": "Rate limit exceeded", "retry_after": retry_after}, status_code=429)
 
     # Add rate limiting headers
     response.headers["Retry-After"] = str(retry_after)

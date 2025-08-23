@@ -294,8 +294,7 @@ class TestContainer:
             pname = get_package_name(pdata)
             if pname in self.package_names:
                 self.fail(
-                    "Package names must be unique: %s, previously "
-                    "occured in %s" % (pname, self.package_names[pname])
+                    "Package names must be unique: %s, previously " "occured in %s" % (pname, self.package_names[pname])
                 )
             elif (
                 pname in self.previous_package_names
@@ -374,16 +373,12 @@ class TestContainer:
 
             elif k == "labels":
                 for label in v:
-                    self.assertNotIn(
-                        ",", label, "Multiple labels should not be in the " "same string"
-                    )
+                    self.assertNotIn(",", label, "Multiple labels should not be in the " "same string")
 
                     # self.assertEqual(label, label.lower(),
                     #                  "Label name must be lowercase")
 
-                self.assertCountEqual(
-                    v, list(set(v)), "Specifying the same label multiple times is redundant"
-                )
+                self.assertCountEqual(v, list(set(v)), "Specifying the same label multiple times is redundant")
 
             elif k == "previous_names":
                 # Test if name is unique, against names and previous_names.
@@ -391,8 +386,7 @@ class TestContainer:
                     if prev_name in self.previous_package_names:
                         self.fail(
                             "Previous package names must be unique: %s, "
-                            "previously occured in %s"
-                            % (prev_name, self.previous_package_names[prev_name])
+                            "previously occured in %s" % (prev_name, self.previous_package_names[prev_name])
                         )
                     elif prev_name in self.package_names:
                         self.fail(
@@ -479,10 +473,7 @@ class TestContainer:
                 condition = (
                     "base" in data
                     and ("tags" in data or "branch" in data)
-                    or (
-                        "sha256" in data
-                        and ("url" not in data or data["url"].startswith("http://"))
-                    )
+                    or ("sha256" in data and ("url" not in data or data["url"].startswith("http://")))
                 )
                 self.assertTrue(
                     condition,
@@ -517,8 +508,7 @@ class TestContainer:
                     self.assertIn(
                         key,
                         data,
-                        'A release must provide "url" and "version" '
-                        'keys if it does not specify "tags" or "branch"',
+                        'A release must provide "url" and "version" ' 'keys if it does not specify "tags" or "branch"',
                     )
             else:
                 for key in ("url", "version", "date"):
@@ -553,9 +543,7 @@ class TestContainer:
 
     def check_release_key_values(self, data, dependency):
         """Check the key-value pairs of a release for validity."""
-        release_key_types_map = (
-            self.dep_release_key_types_map if dependency else self.pck_release_key_types_map
-        )
+        release_key_types_map = self.dep_release_key_types_map if dependency else self.pck_release_key_types_map
         for k, v in data.items():
             self.enforce_key_types_map(k, v, release_key_types_map)
 
@@ -569,9 +557,7 @@ class TestContainer:
                     self.assertRegex(v, r"^https?://")
 
             elif k == "base":
-                self.assertRegex(
-                    v, self.release_base_regex, "The base url is badly formatted or " "invalid"
-                )
+                self.assertRegex(v, self.release_base_regex, "The base url is badly formatted or " "invalid")
 
             elif k == "sublime_text":
                 self.assertRegex(
@@ -590,9 +576,7 @@ class TestContainer:
                 for plat in v:
                     self.assertRegex(plat, r"^(\*|(osx|linux|windows)(-(x(32|64))|arm64)?)$")
 
-                self.assertCountEqual(
-                    v, list(set(v)), "Specifying the same platform multiple times is redundant"
-                )
+                self.assertCountEqual(v, list(set(v)), "Specifying the same platform multiple times is redundant")
 
                 if (
                     ("osx-x32" in v and "osx-x64" in v)
@@ -613,9 +597,7 @@ class TestContainer:
                 self.assertRegex(v, r"^https?://")
 
             elif k == "base":
-                self.assertRegex(
-                    v, self.release_base_regex, "The base url is badly formatted or " "invalid"
-                )
+                self.assertRegex(v, self.release_base_regex, "The base url is badly formatted or " "invalid")
 
             elif k == "tags":
                 self.assertTrue(bool(v), '"tags" must be `true` or a string of length>0')
@@ -830,9 +812,7 @@ class DefaultChannelTests(TestContainer, unittest.TestCase):
                 r"^(\.|https://)",
                 "Repositories must be relative urls or use the " "HTTPS protocol",
             )
-        self.assertEqual(
-            repos, sorted(repos, key=str_cls.lower), "Repositories must be sorted alphabetically"
-        )
+        self.assertEqual(repos, sorted(repos, key=str_cls.lower), "Repositories must be sorted alphabetically")
 
     @classmethod
     def generate_repository_tests(cls, stream):

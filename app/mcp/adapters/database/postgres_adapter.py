@@ -36,31 +36,42 @@ class PostgreSQLAdapter(MCPAdapter):
         try:
             self._config = config
 
-            # In a real implementation, we would use asyncpg to create a connection pool
-            # For this example, we'll simulate the connection
-
-            # Simulate connection delay
-            await asyncio.sleep(0.1)
-
             # Check required config parameters
             required_params = ["host", "port", "user", "password", "database"]
-            for param in required_params:
-                if param not in config:
-                    print(f"Missing required parameter: {param}")
-                    return False
+            missing = [p for p in required_params if p not in config]
+            if missing:
+                print(f"Missing required parameter(s): {', '.join(missing)}")
+                return False
 
-            # Simulate successful connection
-            self._pool = {
-                "connected": True,
-                "host": config["host"],
-                "port": config["port"],
-                "user": config["user"],
-                "database": config["database"],
-                "min_size": config.get("min_connections", 1),
-                "max_size": config.get("max_connections", 10),
-            }
+            # Try to initialize a real connection pool with asyncpg if available
+            try:
+                import asyncpg  # type: ignore
 
-            return True
+                # Build DSN from parts; allow overriding with dsn directly
+                dsn = config.get(
+                    "dsn",
+                    f"postgresql://{config['user']}:{config['password']}@{config['host']}:{config['port']}/{config['database']}",
+                )
+                min_size = int(config.get("min_connections", 1))
+                max_size = int(config.get("max_connections", 10))
+                self._pool = await asyncpg.create_pool(dsn=dsn, min_size=min_size, max_size=max_size)
+                return True
+            except ImportError:
+                # asyncpg is not installed; fall back to simulated connection
+                await asyncio.sleep(0.1)
+                self._pool = {
+                    "connected": True,
+                    "host": config["host"],
+                    "port": config["port"],
+                    "user": config["user"],
+                    "database": config["database"],
+                    "min_size": config.get("min_connections", 1),
+                    "max_size": config.get("max_connections", 10),
+                }
+                return True
+            except Exception as e:
+                print(f"Failed to initialize PostgreSQL adapter: {e}")
+                return False
         except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Failed to initialize PostgreSQL adapter: {e}")
             return False
@@ -94,61 +105,59 @@ class PostgreSQLAdapter(MCPAdapter):
             DataResponse: The response from the data source
         """
         try:
-            if not self._pool or not self._pool["connected"]:
+            # Ensure pool is initialized and connected
+            if not self._pool:
                 return DataResponse(
                     data=None,
                     status_code=500,
                     error="Database connection not initialized",
                 )
 
-            # In a real implementation, we would use asyncpg to execute the query
-            # For this example, we'll simulate the query execution
+            # If we have a real asyncpg pool, use it to execute the query
+            try:
+                import asyncpg  # type: ignore
+            except ImportError:
+                asyncpg = None
 
-            # Simulate query execution delay
-            await asyncio.sleep(0.05)
-
-            # Parse the query to determine the type of operation
-            query = request.query.strip().upper()
-
-            if query.startswith("SELECT"):
-                # Simulate a SELECT query
-                if "USERS" in query:
-                    # Simulate a query to the users table
-                    data = [
-                        {"id": 1, "username": "john_doe", "email": "john@example.com"},
-                        {"id": 2, "username": "jane_doe", "email": "jane@example.com"},
-                    ]
-                elif "PRODUCTS" in query:
-                    # Simulate a query to the products table
-                    data = [
-                        {"id": 1, "name": "Product A", "price": 19.99},
-                        {"id": 2, "name": "Product B", "price": 29.99},
-                    ]
-                else:
-                    # Generic result
-                    data = [{"result": "Simulated query result"}]
-
-                return DataResponse(
-                    data=data,
-                    metadata={"row_count": len(data)},
-                    status_code=200,
-                )
-            elif (
-                query.startswith("INSERT")
-                or query.startswith("UPDATE")
-                or query.startswith("DELETE")
-            ):
-                # Simulate a write operation
-                return DataResponse(
-                    data={"affected_rows": 1},
-                    status_code=200,
-                )
+            # Distinguish between pool types
+            if asyncpg and isinstance(self._pool, asyncpg.pool.Pool):  # type: ignore[attr-defined]
+                try:
+                    sql = request.query
+                    # Determine if this is a read or write query
+                    cmd = sql.strip().split()[0].lower()
+                    async with self._pool.acquire() as conn:
+                        if cmd in {"select", "with"}:
+                            rows = await conn.fetch(sql)
+                            # Convert asyncpg Record to dict
+                            data = [dict(row) for row in rows]
+                            return DataResponse(data=data, metadata={"row_count": len(data)}, status_code=200)
+                        else:
+                            result = await conn.execute(sql)
+                            return DataResponse(data={"result": result}, status_code=200)
+                except Exception as e:
+                    return DataResponse(data=None, status_code=500, error=str(e))
             else:
-                # Other queries
-                return DataResponse(
-                    data={"result": "Query executed successfully"},
-                    status_code=200,
-                )
+                # Simulated execution path
+                await asyncio.sleep(0.05)
+                query = request.query.strip().upper()
+                if query.startswith("SELECT"):
+                    if "USERS" in query:
+                        data = [
+                            {"id": 1, "username": "john_doe", "email": "john@example.com"},
+                            {"id": 2, "username": "jane_doe", "email": "jane@example.com"},
+                        ]
+                    elif "PRODUCTS" in query:
+                        data = [
+                            {"id": 1, "name": "Product A", "price": 19.99},
+                            {"id": 2, "name": "Product B", "price": 29.99},
+                        ]
+                    else:
+                        data = [{"result": "Simulated query result"}]
+                    return DataResponse(data=data, metadata={"row_count": len(data)}, status_code=200)
+                elif query.startswith("INSERT") or query.startswith("UPDATE") or query.startswith("DELETE"):
+                    return DataResponse(data={"affected_rows": 1}, status_code=200)
+                else:
+                    return DataResponse(data={"result": "Query executed successfully"}, status_code=200)
         except Exception as e:  # pylint: disable=broad-exception-caught
             return DataResponse(
                 data=None,
@@ -174,8 +183,19 @@ class PostgreSQLAdapter(MCPAdapter):
 
     async def shutdown(self) -> None:
         """Clean up resources when shutting down."""
-        if self._pool and self._pool["connected"]:
-            # In a real implementation, we would close the connection pool
-            # For this example, we'll just set connected to False
-            self._pool["connected"] = False
+        if not self._pool:
+            return
+        try:
+            # If this is a real asyncpg pool, close it properly
+            try:
+                import asyncpg  # type: ignore
+            except ImportError:
+                asyncpg = None
+            if asyncpg and isinstance(self._pool, asyncpg.pool.Pool):  # type: ignore[attr-defined]
+                await self._pool.close()
+            else:
+                # Simulated pool: mark as disconnected
+                if isinstance(self._pool, dict):
+                    self._pool["connected"] = False
+        finally:
             self._pool = None
