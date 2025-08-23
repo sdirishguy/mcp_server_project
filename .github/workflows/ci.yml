@@ -2,47 +2,39 @@ name: CI
 
 on:
   push:
+    branches: [ main, feature/** ]
   pull_request:
+    branches: [ main ]
 
 jobs:
-  ci:
+  build-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.12', '3.13']
+    env:
+      ANYIO_BACKEND: asyncio
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-          cache: "pip"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install deps
         run: |
-          python -m pip install -U pip
-          # requirements.txt is optional in your repo
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install -r requirements-dev.txt
+          python -m pip install -U pip wheel setuptools
+          if [ -f requirements.txt ]; then python -m pip install -r requirements.txt; fi
+          python -m pip install ruff mypy
 
-      - name: Lint (ruff)
-        run: make lint
+      - name: Ruff (lint + format check)
+        run: |
+          ruff check .
+          ruff format --check .
 
-      - name: Typecheck (mypy)
-        run: make typecheck
+      - name: Type check
+        run: mypy .
 
-      - name: Tests (starts/stops uvicorn)
-        env:
-          WAIT_SECS: 60
-          LOG_LEVEL: INFO
-          ADMIN_USERNAME: admin
-          ADMIN_PASSWORD: admin123
-          PYTHONPATH: .
-        run: make test
-
-      # Optional: secured flow tests (enable when needed)
-      # - name: Auth Flow Tests
-      #   env:
-      #     WAIT_SECS: 60
-      #     RUN_AUTH_TESTS: "1"
-      #     LOG_LEVEL: INFO
-      #     ADMIN_USERNAME: admin
-      #     ADMIN_PASSWORD: admin123
-      #   run: make test
+      - name: Tests
+        run: pytest -q

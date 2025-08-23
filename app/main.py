@@ -37,8 +37,6 @@ from app.mcp.adapters.database.postgres_adapter import PostgreSQLAdapter
 from app.mcp.cache.memory.in_memory_cache import CacheManager, InMemoryCache
 from app.mcp.core.adapter import AdapterManager, AdapterRegistry
 from app.mcp.security.audit.audit_logging import (
-    AuditEvent,
-    AuditEventOutcome,
     AuditEventType,
     create_default_audit_logger,
 )
@@ -92,8 +90,8 @@ class User:
 async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
-    # Use JWT for production and in‑memory fallback for tests or if JWT secret is default
-    # When JWT_SECRET is set to a non‑trivial value, prefer JWT auth provider.
+    # Use JWT for production and in-memory fallback for tests or if JWT secret is default
+    # When JWT_SECRET is set to a non-trivial value, prefer JWT auth provider.
     if settings.JWT_SECRET and settings.JWT_SECRET != "change-me":
         jwt_provider = JWTAuthProvider(
             secret=settings.JWT_SECRET,
@@ -107,7 +105,7 @@ async def setup_mcp() -> dict[str, Any]:
         )
         auth_manager.register_provider("jwt", jwt_provider)
     else:
-        # Fallback to in‑memory auth provider for development/testing
+        # Fallback to in-memory auth provider for development/testing
         auth_provider = InMemoryAuthProvider()
         auth_provider.add_user(
             settings.ADMIN_USERNAME,
@@ -208,13 +206,13 @@ async def login(request: Request) -> JSONResponse:
         if auth_result.authenticated:
             record_auth_attempt("success")
             await mcp_components["audit_logger"].log_event(
-                AuditEvent(
-                    event_type=AuditEventType.AUTHENTICATION,
-                    event_action="login",
-                    outcome=AuditEventOutcome.SUCCESS,
-                    user_id=auth_result.user_id,
-                    details={"provider": "local"},
-                )
+                AuditEventType.LOGIN,
+                actor=auth_result.user_id or credentials.get("username"),
+                context={
+                    "success": True,
+                    "provider": provider_id,
+                    "ip": getattr(getattr(request, "client", None), "host", None),
+                },
             )
             return JSONResponse(
                 {
@@ -228,12 +226,14 @@ async def login(request: Request) -> JSONResponse:
         else:
             record_auth_attempt("failure")
             await mcp_components["audit_logger"].log_event(
-                AuditEvent(
-                    event_type=AuditEventType.AUTHENTICATION,
-                    event_action="login",
-                    outcome=AuditEventOutcome.FAILURE,
-                    details={"provider": "local"},
-                )
+                AuditEventType.LOGIN,
+                actor=credentials.get("username"),
+                context={
+                    "success": False,
+                    "reason": "invalid_credentials",
+                    "provider": provider_id,
+                    "ip": getattr(getattr(request, "client", None), "host", None),
+                },
             )
             return JSONResponse(
                 {"authenticated": False, "error": "Invalid credentials"},
@@ -266,15 +266,15 @@ async def create_adapter(request: Request) -> JSONResponse:
         )
         if not has_permission:
             await mcp_components["audit_logger"].log_event(
-                AuditEvent(
-                    event_type=AuditEventType.AUTHORIZATION,
-                    event_action="create_adapter",
-                    outcome=AuditEventOutcome.FAILURE,
-                    user_id=user.user_id,
-                    resource_type="adapter",
-                    resource_id=adapter_type,
-                    details={"action": "create"},
-                )
+                AuditEventType.ADAPTER_CREATE,
+                actor=getattr(user, "user_id", None),
+                context={
+                    "success": False,
+                    "authorized": False,
+                    "resource_type": "adapter",
+                    "resource_id": adapter_type,
+                    "action": "create",
+                },
             )
             return JSONResponse({"message": "Forbidden"}, status_code=403)
 
@@ -291,15 +291,17 @@ async def create_adapter(request: Request) -> JSONResponse:
         )
 
         await mcp_components["audit_logger"].log_event(
-            AuditEvent(
-                event_type=AuditEventType.AUTHORIZATION,
-                event_action="create_adapter",
-                outcome=AuditEventOutcome.SUCCESS,
-                user_id=user.user_id,
-                resource_type="adapter",
-                resource_id=adapter_type,
-                details={"instance_id": instance_id, "config": body},
-            )
+            AuditEventType.ADAPTER_CREATE,
+            actor=getattr(user, "user_id", None),
+            context={
+                "success": True,
+                "authorized": True,
+                "resource_type": "adapter",
+                "resource_id": adapter_type,
+                "action": "create",
+                "instance_id": instance_id,
+                "config": body,
+            },
         )
 
         return JSONResponse(
@@ -554,7 +556,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # Create a mock user for testing
                     from app.main import User
 
-                    request.state.user = User(user_id="test_user", roles=["admin"], permissions=["read", "write"])
+                    request.state.user = User(
+                        user_id="test_user",
+                        roles=["admin"],
+                        permissions=["read", "write"],
+                    )
                     return await call_next(request)
                 else:
                     return JSONResponse({"message": "Invalid token"}, status_code=401)
