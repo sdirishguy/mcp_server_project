@@ -41,15 +41,17 @@ class RestApiAdapter(MCPAdapter):
 
             self._headers = config.get("headers", {})
 
-            # In a real implementation, we would use httpx.AsyncClient
-            # For this example, we'll simulate the client
-            self._client = {
-                "connected": True,
-                "base_url": self._base_url,
-                "headers": self._headers,
-                "timeout": config.get("timeout_seconds", 30.0),
-                "follow_redirects": config.get("follow_redirects", True),
-            }
+            # Use httpx.AsyncClient for real HTTP requests
+            import httpx  # Imported lazily to avoid overhead when not needed
+
+            timeout = config.get("timeout_seconds", 30.0)
+            follow_redirects = config.get("follow_redirects", True)
+            self._client = httpx.AsyncClient(
+                base_url=self._base_url,
+                headers=self._headers,
+                timeout=timeout,
+                follow_redirects=follow_redirects,
+            )
 
             return True
         except Exception as e:  # pylint: disable=broad-exception-caught
@@ -91,63 +93,67 @@ class RestApiAdapter(MCPAdapter):
                     error="API client not initialized",
                 )
 
-            # Parse the query as a URL path and HTTP method
-            parts = request.query.split(" ", 1)
-            method = parts[0].upper() if len(parts) > 1 else "GET"
-            path = parts[1] if len(parts) > 1 else parts[0]
-
-            url = f"{self._base_url.rstrip('/')}/{path.lstrip('/')}"
-
-            # In a real implementation, we would use httpx to make the request
-            # For this example, we'll simulate the request
-
-            # Simulate different responses based on the path
-            if "users" in path.lower():
-                # Simulate a users endpoint
-                data = [
-                    {"id": 1, "name": "John Doe", "email": "john@example.com"},
-                    {"id": 2, "name": "Jane Doe", "email": "jane@example.com"},
-                ]
-                status_code = 200
-            elif "products" in path.lower():
-                # Simulate a products endpoint
-                data = [
-                    {"id": 1, "name": "Product A", "price": 19.99, "in_stock": True},
-                    {"id": 2, "name": "Product B", "price": 29.99, "in_stock": False},
-                ]
-                status_code = 200
-            elif "auth" in path.lower() or "login" in path.lower():
-                # Simulate an auth endpoint
-                if method == "POST" and request.parameters and "username" in request.parameters:
-                    data = {
-                        "token": "simulated_jwt_token",
-                        "expires_in": 3600,
-                        "user_id": 123,
-                    }
-                    status_code = 200
-                else:
-                    data = {"error": "Invalid credentials"}
-                    status_code = 401
+            # Parse the query as "METHOD /path" or just path for GET
+            parts = request.query.strip().split(" ", 1)
+            if len(parts) == 2:
+                method_str, path = parts[0].upper(), parts[1]
             else:
-                # Generic response
-                data = {"message": "Endpoint not found"}
-                status_code = 404
+                method_str, path = "GET", parts[0]
 
-            # Return the response
-            return DataResponse(
-                data=data,
-                metadata={
-                    "status_code": status_code,
-                    "headers": {
-                        "Content-Type": "application/json",
-                        "X-API-Version": "1.0",
+            method = method_str.lower()
+            url_path = path.lstrip("/")
+
+            # Build request parameters
+            params = {}
+            headers = self._headers.copy()
+            body = None
+            if request.parameters:
+                params = request.parameters.get("params", {}) or {}
+                # Override default headers with those specified in request parameters
+                headers.update(request.parameters.get("headers", {}) or {})
+                body = request.parameters.get("body")
+
+            try:
+                client = self._client
+                if client is None:
+                    return DataResponse(
+                        data=None,
+                        status_code=500,
+                        error="API client not initialized",
+                    )
+
+                # Perform the HTTP request using httpx
+                response = await client.request(
+                    method,
+                    url_path,
+                    params=params,
+                    headers=headers,
+                    json=body,
+                )
+
+                # Attempt to decode JSON, fall back to text if JSON fails
+                try:
+                    data = response.json()
+                except Exception:
+                    data = response.text
+
+                return DataResponse(
+                    data=data,
+                    metadata={
+                        "status_code": response.status_code,
+                        "headers": dict(response.headers),
+                        "url": str(response.url),
+                        "method": method_str,
                     },
-                    "url": url,
-                    "method": method,
-                },
-                status_code=200 if status_code < 400 else status_code,
-                error=None if status_code < 400 else f"HTTP error: {status_code}",
-            )
+                    status_code=response.status_code,
+                    error=None if response.is_success else response.text,
+                )
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                return DataResponse(
+                    data=None,
+                    status_code=500,
+                    error=str(e),
+                )
         except Exception as e:  # pylint: disable=broad-exception-caught
             return DataResponse(
                 data=None,
@@ -173,8 +179,11 @@ class RestApiAdapter(MCPAdapter):
 
     async def shutdown(self) -> None:
         """Clean up resources when shutting down."""
-        if self._client and self._client["connected"]:
-            # In a real implementation, we would close the client
-            # For this example, we'll just set connected to False
-            self._client["connected"] = False
+        # Close the underlying httpx client if it exists
+        try:
+            if self._client:
+                await self._client.aclose()
+        except Exception:
+            pass
+        finally:
             self._client = None

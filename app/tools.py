@@ -15,13 +15,7 @@ from typing import Any
 
 import httpx
 
-from .config import (
-    ALLOW_ARBITRARY_SHELL_COMMANDS,
-    GEMINI_API_KEY,
-    MCP_BASE_WORKING_DIR,
-    OPENAI_API_KEY,
-    logger,
-)
+from .config import settings, logger
 from .monitoring import tool_execution_monitor
 
 DEFAULT_OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
@@ -31,8 +25,14 @@ DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 
 def _resolve_and_verify_path(path_str: str | None) -> Path:
-    """Resolve and verify path is within sandbox directory."""
-    base = MCP_BASE_WORKING_DIR.resolve()
+    """Resolve and verify that a relative path stays within the configured sandbox.
+
+    The sandbox base directory is defined by `settings.MCP_BASE_WORKING_DIR`.  Both the
+    base and target paths are resolved to absolute paths before comparison to
+    prevent path traversal attacks.  A `PermissionError` is raised for any
+    attempted traversal outside of the sandbox.
+    """
+    base = Path(settings.MCP_BASE_WORKING_DIR).resolve()
     target = (base / (path_str or ".")).resolve()
     if not str(target).startswith(str(base)):
         raise PermissionError("Path traversal outside of sandbox is not allowed.")
@@ -131,7 +131,7 @@ async def execute_shell_command_tool(
     """Execute a shell command within the sandbox."""
     async with tool_execution_monitor("execute_shell_command"):
         try:
-            if not ALLOW_ARBITRARY_SHELL_COMMANDS:
+            if not settings.ALLOW_ARBITRARY_SHELL_COMMANDS:
                 return {
                     "content": [
                         {"type": "text", "text": "Shell commands are disabled by configuration."}
@@ -179,7 +179,7 @@ async def llm_generate_code_openai_tool(
     system_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Generate code using OpenAI's API."""
-    if not OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY:
         return {"content": [{"type": "text", "text": "OpenAI API key not set."}], "isError": True}
     if not system_prompt:
         system_prompt = (
@@ -188,7 +188,7 @@ async def llm_generate_code_openai_tool(
         )
 
     api_url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"}
     data = {
         "model": model,
         "messages": [
@@ -229,7 +229,7 @@ async def llm_generate_code_gemini_tool(
     system_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Generate code using Google's Gemini API."""
-    if not GEMINI_API_KEY:
+    if not settings.GEMINI_API_KEY:
         return {"content": [{"type": "text", "text": "Gemini API key not set."}], "isError": True}
     if not system_prompt:
         system_prompt = (
@@ -239,7 +239,7 @@ async def llm_generate_code_gemini_tool(
 
     api_url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={GEMINI_API_KEY}"
+        f"{model}:generateContent?key={settings.GEMINI_API_KEY}"
     )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],

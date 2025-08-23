@@ -42,7 +42,11 @@ from app.mcp.security.audit.audit_logging import (
     AuditEventType,
     create_default_audit_logger,
 )
-from app.mcp.security.auth.authentication import AuthenticationManager, InMemoryAuthProvider
+from app.mcp.security.auth.authentication import (
+    AuthenticationManager,
+    InMemoryAuthProvider,
+    JWTAuthProvider,
+)
 from app.mcp.security.auth.authorization import (
     Action,
     AuthorizationManager,
@@ -88,10 +92,29 @@ class User:
 async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
-    auth_provider = InMemoryAuthProvider()
-    # Bootstrap creds from .env via Settings
-    auth_provider.add_user(settings.ADMIN_USERNAME, settings.ADMIN_PASSWORD, roles=["admin"])
-    auth_manager.register_provider("local", auth_provider)
+    # Use JWT for production and in‑memory fallback for tests or if JWT secret is default
+    # When JWT_SECRET is set to a non‑trivial value, prefer JWT auth provider.
+    if settings.JWT_SECRET and settings.JWT_SECRET != "change-me":
+        jwt_provider = JWTAuthProvider(
+            secret=settings.JWT_SECRET,
+            expiry_minutes=settings.JWT_EXPIRY_MINUTES,
+        )
+        jwt_provider.add_user(
+            settings.ADMIN_USERNAME,
+            settings.ADMIN_PASSWORD,
+            roles=["admin"],
+            permissions=["*"] if settings.ENVIRONMENT == "development" else [],
+        )
+        auth_manager.register_provider("jwt", jwt_provider)
+    else:
+        # Fallback to in‑memory auth provider for development/testing
+        auth_provider = InMemoryAuthProvider()
+        auth_provider.add_user(
+            settings.ADMIN_USERNAME,
+            settings.ADMIN_PASSWORD,
+            roles=["admin"],
+        )
+        auth_manager.register_provider("local", auth_provider)
 
     authz_manager = AuthorizationManager()
     authz_manager.add_role(create_admin_role())
@@ -174,8 +197,12 @@ async def login(request: Request) -> JSONResponse:
     try:
         credentials = await request.json()
 
-        auth_result = await mcp_components["auth_manager"].authenticate(
-            provider_id="local",
+        # Determine which auth provider to use. Prefer JWT provider if registered, otherwise use first provider.
+        auth_manager = mcp_components["auth_manager"]
+        provider_ids = auth_manager.get_provider_ids()
+        provider_id = "jwt" if "jwt" in provider_ids else (provider_ids[0] if provider_ids else "local")
+        auth_result = await auth_manager.authenticate(
+            provider_id=provider_id,
             credentials=credentials,
         )
         if auth_result.authenticated:
