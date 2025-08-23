@@ -14,7 +14,7 @@ from pathlib import Path
 
 import httpx
 
-from .config import settings, logger
+from .config import logger, settings
 from .monitoring import tool_execution_monitor
 
 # ---------------------------------------------------------------------------
@@ -22,14 +22,10 @@ from .monitoring import tool_execution_monitor
 # ---------------------------------------------------------------------------
 
 # Base working directory used by file tools
-MCP_BASE_WORKING_DIR = Path(
-    getattr(settings, "MCP_BASE_WORKING_DIR", getattr(settings, "WORKING_DIR", "."))
-)
+MCP_BASE_WORKING_DIR = Path(getattr(settings, "MCP_BASE_WORKING_DIR", getattr(settings, "WORKING_DIR", ".")))
 
 # Whether arbitrary shell commands are allowed (tests patch this)
-ALLOW_ARBITRARY_SHELL_COMMANDS = bool(
-    getattr(settings, "ALLOW_ARBITRARY_SHELL_COMMANDS", False)
-)
+ALLOW_ARBITRARY_SHELL_COMMANDS = bool(getattr(settings, "ALLOW_ARBITRARY_SHELL_COMMANDS", False))
 
 # API keys exposed for tests that patch them at module scope
 OPENAI_API_KEY = getattr(settings, "OPENAI_API_KEY", None)
@@ -155,9 +151,7 @@ def _is_command_allowed(command: str) -> tuple[bool, str]:
     return True, ""
 
 
-async def execute_shell_command_tool(
-    command: str, working_directory: str | None = None
-) -> dict[str, object]:
+async def execute_shell_command_tool(command: str, working_directory: str | None = None) -> dict[str, object]:
     """Execute a shell command within the sandbox."""
     async with tool_execution_monitor("execute_shell_command"):
         try:
@@ -207,7 +201,6 @@ async def execute_shell_command_tool(
                 "content": [{"type": "text", "text": f"Failed to execute command: {e}"}],
                 "isError": True,
             }
-
 
 
 # ---------------------------------------------------------------------------
@@ -287,10 +280,7 @@ async def llm_generate_code_gemini_tool(
             f"You are a professional code generator. Generate clean, idiomatic {language} code. Respond only with code."
         )
 
-    api_url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{model}:generateContent?key={api_key}"
-    )
+    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": temperature, "maxOutputTokens": max_output_tokens},
@@ -323,9 +313,7 @@ async def llm_generate_code_local_tool() -> dict[str, object]:
         "content": [
             {
                 "type": "text",
-                "text": (
-                    "Local LLM support coming soon! (Ollama, LM Studio, etc. will be integrated here.)"
-                ),
+                "text": ("Local LLM support coming soon! (Ollama, LM Studio, etc. will be integrated here.)"),
             }
         ],
         "isError": False,

@@ -46,9 +46,7 @@ with open(old_repositories_json_path, encoding="utf-8") as of:
     repositories_to_process = repositories_without_orgs + repositories_from_orgs
 
     for repository in repositories_to_process:
-        repo_match = re.match(
-            "https://(github.com|bitbucket.org)/([^/]+)/([^/]+)(?:/tree/([^/]+))?$", repository
-        )
+        repo_match = re.match("https://(github.com|bitbucket.org)/([^/]+)/([^/]+)(?:/tree/([^/]+))?$", repository)
 
         if repo_match:
             old_name = None
@@ -725,9 +723,7 @@ with open(old_repositories_json_path, encoding="utf-8") as of:
                     repo_match.group(3),
                     branch,
                 )
-            entry["releases"] = [
-                OrderedDict([("sublime_text", compatible_version), ("details", release_url)])
-            ]
+            entry["releases"] = [OrderedDict([("sublime_text", compatible_version), ("details", release_url)])]
 
             if name in st3_with_branch:
                 if repo_match.group(1).lower() == "github.com":
@@ -742,18 +738,14 @@ with open(old_repositories_json_path, encoding="utf-8") as of:
                         repo_match.group(3),
                         st3_with_branch[name],
                     )
-                entry["releases"].append(
-                    OrderedDict([("sublime_text", ">=3000"), ("details", release_url)])
-                )
+                entry["releases"].append(OrderedDict([("sublime_text", ">=3000"), ("details", release_url)]))
 
             if prev_names:
                 entry["previous_names"] = prev_names
             master_list[name] = entry
 
         else:
-            repository = repository.replace(
-                "http://sublime.wbond.net/", "https://sublime.wbond.net/"
-            )
+            repository = repository.replace("http://sublime.wbond.net/", "https://sublime.wbond.net/")
             repositories.append(repository)
 
 

@@ -371,9 +371,7 @@ async def protected_route(request: Request) -> JSONResponse:
     user = getattr(request.state, "user", None)
     if not user:
         return JSONResponse({"error": "Not authenticated"}, status_code=401)
-    return JSONResponse(
-        {"message": "This is a protected route", "user": user.user_id, "roles": user.roles}
-    )
+    return JSONResponse({"message": "This is a protected route", "user": user.user_id, "roles": user.roles})
 
 
 async def whoami(request: Request) -> JSONResponse:
@@ -498,8 +496,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-            "style-src 'self' 'unsafe-inline'"
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
         )
 
         return response
@@ -525,9 +522,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         )
 
         # Allow OPTIONS requests and public endpoints to pass through
-        if request.method == "OPTIONS" or any(
-            request.url.path.startswith(p) for p in public_prefixes
-        ):
+        if request.method == "OPTIONS" or any(request.url.path.startswith(p) for p in public_prefixes):
             return await call_next(request)
 
         # Check if this is a known route that requires authentication
@@ -559,9 +554,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     # Create a mock user for testing
                     from app.main import User
 
-                    request.state.user = User(
-                        user_id="test_user", roles=["admin"], permissions=["read", "write"]
-                    )
+                    request.state.user = User(user_id="test_user", roles=["admin"], permissions=["read", "write"])
                     return await call_next(request)
                 else:
                     return JSONResponse({"message": "Invalid token"}, status_code=401)
@@ -623,9 +616,7 @@ async def custom_rate_limit_handler(request: Request, exc: Exception) -> Respons
     # Get retry_after from the exception if available, otherwise use a default
     retry_after = getattr(exc, "retry_after", 60)  # Default to 60 seconds
 
-    response = JSONResponse(
-        {"error": "Rate limit exceeded", "retry_after": retry_after}, status_code=429
-    )
+    response = JSONResponse({"error": "Rate limit exceeded", "retry_after": retry_after}, status_code=429)
 
     # Add rate limiting headers
     response.headers["Retry-After"] = str(retry_after)

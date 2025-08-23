@@ -90,16 +90,12 @@ if TYPE_CHECKING:
 else:
     _Content = getattr(mcp.types, "Content", None)
     if _Content is None:
-        logger.warning(
-            "Client: Could not resolve mcp.types.Content via getattr, using placeholder."
-        )
+        logger.warning("Client: Could not resolve mcp.types.Content via getattr, using placeholder.")
         _Content = PlaceholderContent
 
     CONTENT_TYPE = getattr(mcp.types, "ContentType", None)
     if CONTENT_TYPE is None:
-        logger.warning(
-            "Client: Could not resolve mcp.types.ContentType via getattr, using placeholder."
-        )
+        logger.warning("Client: Could not resolve mcp.types.ContentType via getattr, using placeholder.")
         CONTENT_TYPE = PlaceholderContentType
     _ContentType = CONTENT_TYPE
 
@@ -110,9 +106,7 @@ else:
 
     _CallToolResult = getattr(mcp.types, "CallToolResult", None)
     if _CallToolResult is None:
-        logger.error(
-            "CRITICAL: Client could not resolve mcp.types.CallToolResult! Using placeholder."
-        )
+        logger.error("CRITICAL: Client could not resolve mcp.types.CallToolResult! Using placeholder.")
         _CallToolResult = PlaceholderCallToolResult
 
 
@@ -160,9 +154,7 @@ class MockToolCallResponse:
                     elif isinstance(item, dict) and "type" in item and "data" in item:
                         parsed_results.append(_Content(type=item["type"], data=item["data"]))
                     else:
-                        parsed_results.append(
-                            _Content(type="unknown_sdk_result_item", data=str(item))
-                        )
+                        parsed_results.append(_Content(type="unknown_sdk_result_item", data=str(item)))
             parsed_error = sdk_response_obj.error
             if (
                 sdk_response_obj.error
@@ -186,33 +178,20 @@ class MockToolCallResponse:
 
                         if _ContentType is not PlaceholderContentType:
                             if hasattr(_ContentType, content_type_value_str.upper()):
-                                actual_content_type = getattr(
-                                    _ContentType, content_type_value_str.upper()
-                                )
-                            elif callable(_ContentType) and not isinstance(
-                                _ContentType, type(type)
-                            ):
+                                actual_content_type = getattr(_ContentType, content_type_value_str.upper())
+                            elif callable(_ContentType) and not isinstance(_ContentType, type(type)):
                                 try:
                                     actual_content_type = _ContentType(content_type_value_str)
                                 except (ValueError, TypeError):
                                     pass
 
-                        parsed_results.append(
-                            _Content(type=actual_content_type, data=item_dict["data"])
-                        )
+                        parsed_results.append(_Content(type=actual_content_type, data=item_dict["data"]))
                     else:
-                        parsed_results.append(
-                            _Content(type="unknown_dict_item", data=str(item_dict))
-                        )
+                        parsed_results.append(_Content(type="unknown_dict_item", data=str(item_dict)))
 
             error_dict = sdk_response_obj.get("error")
             parsed_error = None
-            if (
-                error_dict
-                and isinstance(error_dict, dict)
-                and "code" in error_dict
-                and "message" in error_dict
-            ):
+            if error_dict and isinstance(error_dict, dict) and "code" in error_dict and "message" in error_dict:
                 parsed_error = _ErrorData(
                     code=error_dict["code"],
                     message=error_dict["message"],
@@ -232,9 +211,7 @@ class MockToolCallResponse:
         return cls(raw_response={"unknown_response_format": str(sdk_response_obj)})
 
 
-def print_tool_call_summary(
-    tool_name: str, params: dict[str, Any], response_wrapper: MockToolCallResponse
-):
+def print_tool_call_summary(tool_name: str, params: dict[str, Any], response_wrapper: MockToolCallResponse):
     """Print a summary of a tool call and its response.
 
     Args:
@@ -278,14 +255,9 @@ async def main_test_logic():
     if _ContentType is PlaceholderContentType:
         logger.warning("Client is using placeholder for ContentType type.")
     if _ErrorData is PlaceholderErrorData:
-        logger.error(
-            "CRITICAL: Client using placeholder for ErrorData. Error parsing will be basic."
-        )
+        logger.error("CRITICAL: Client using placeholder for ErrorData. Error parsing will be basic.")
     if _CallToolResult is PlaceholderCallToolResult:
-        logger.error(
-            "CRITICAL: Client using placeholder for CallToolResult. "
-            "Tool call result parsing may be basic."
-        )
+        logger.error("CRITICAL: Client using placeholder for CallToolResult. Tool call result parsing may be basic.")
 
     logger.info("Attempting to establish MCP stream connection to %s...", MCP_FULL_ENDPOINT_URL)
     try:

@@ -1,5 +1,5 @@
 [tool.black]
-line-length = 100
+line-length = 120            # <- match Ruff
 target-version = ["py312"]
 extend-exclude = '''
 ^(
@@ -14,7 +14,7 @@ extend-exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 120            # <- match Black/Ruff (keep if you're still using isort)
 skip_glob = [
   "package_control_channel/**",
   ".venv/**",
@@ -24,7 +24,7 @@ skip_glob = [
 ]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 extend-exclude = [
   "package_control_channel/**",
@@ -36,12 +36,14 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
-ignore = [
-  "UP046",  # Keep Generic[...] for compatibility with Python < 3.12 (PEP 695 not available)
-]
+select = ["E", "F", "I"]
+# ignore = ["UP046"]  # <- remove; not using UP rules
 
+[tool.ruff.lint.isort]
+known-first-party = ["app"]  # optional but helpful
 
+[tool.ruff.format]
+quote-style = "double"
 
 [tool.pytest.ini_options]
 addopts = "--tb=short -v"
@@ -50,8 +52,12 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 pythonpath = ["."]
 markers = [
-    "anyio: marks tests as needing anyio (deselect with '-m \"not anyio\"')",
-    "asyncio: marks tests as needing asyncio",
+  "anyio: marks tests as needing anyio (deselect with '-m \"not anyio\"')",
+  "asyncio: marks tests as needing asyncio",
 ]
-# Use only asyncio backend for stability in CI environments
-# (configured via ANYIO_BACKEND environment variable)
+# If you use AnyIO, you can also set ANYIO_BACKEND=asyncio in CI env.
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+strict = false

@@ -79,9 +79,7 @@ class AuthenticationManager:
         """
         self._providers[provider_id] = provider
 
-    async def authenticate(
-        self, provider_id: str, credentials: dict[str, Any]
-    ) -> AuthenticationResult:
+    async def authenticate(self, provider_id: str, credentials: dict[str, Any]) -> AuthenticationResult:
         """Authenticate using a specific provider.
 
         Args:
@@ -157,9 +155,7 @@ class InMemoryAuthProvider(AuthenticationProvider):
         self._tokens: dict[str, dict[str, Any]] = {}
         self._token_expiry_minutes = token_expiry_minutes
 
-    def add_user(
-        self, username: str, password: str, roles: list[str] = None, permissions: list[str] = None
-    ) -> None:
+    def add_user(self, username: str, password: str, roles: list[str] = None, permissions: list[str] = None) -> None:
         """Add a user to the provider.
 
         Args:
@@ -319,13 +315,13 @@ class JWTAuthProvider(AuthenticationProvider):
         """Decode a base64url encoded string, adding padding if necessary."""
         import base64
 
-        padding = '=' * (-len(data) % 4)
+        padding = "=" * (-len(data) % 4)
         return base64.urlsafe_b64decode(data + padding)
 
     def _sign(self, msg: bytes) -> bytes:
         """Return HMAC‑SHA256 signature for a message using the provider's secret."""
-        import hmac
         import hashlib
+        import hmac
 
         return hmac.new(self._secret, msg, hashlib.sha256).digest()
 
@@ -348,7 +344,8 @@ class JWTAuthProvider(AuthenticationProvider):
             return AuthenticationResult(authenticated=False)
 
         # Build JWT header and payload
-        import json, time
+        import json
+        import time
 
         header = {"alg": "HS256", "typ": "JWT"}
         exp_timestamp = int(time.time() + self._expiry_minutes * 60)
@@ -383,7 +380,8 @@ class JWTAuthProvider(AuthenticationProvider):
         Returns:
             AuthenticationResult: Result of validation
         """
-        import json, time
+        import json
+        import time
 
         try:
             header_b64, payload_b64, signature_b64 = token.split(".")

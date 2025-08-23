@@ -244,9 +244,7 @@ class TestLLMTools:
     @pytest.mark.asyncio
     async def test_gemini_tool_success(self):
         """Test successful Gemini code generation."""
-        mock_response = {
-            "candidates": [{"content": {"parts": [{"text": "print('Hello, World!')"}]}}]
-        }
+        mock_response = {"candidates": [{"content": {"parts": [{"text": "print('Hello, World!')"}]}}]}
 
         with patch("app.tools.GEMINI_API_KEY", "test-key"):
             with patch("httpx.AsyncClient.post") as mock_post:

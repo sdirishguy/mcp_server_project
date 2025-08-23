@@ -16,9 +16,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 # Prometheus metrics
-REQUEST_COUNT = Counter(
-    "mcp_http_requests_total", "Total number of HTTP requests", ["method", "endpoint", "status"]
-)
+REQUEST_COUNT = Counter("mcp_http_requests_total", "Total number of HTTP requests", ["method", "endpoint", "status"])
 
 REQUEST_DURATION = Histogram(
     "mcp_http_request_duration_seconds", "HTTP request duration in seconds", ["method", "endpoint"]
@@ -26,9 +24,7 @@ REQUEST_DURATION = Histogram(
 
 ACTIVE_CONNECTIONS = Gauge("mcp_active_connections", "Number of active connections")
 
-TOOL_EXECUTION_COUNT = Counter(
-    "mcp_tool_executions_total", "Total number of tool executions", ["tool_name", "status"]
-)
+TOOL_EXECUTION_COUNT = Counter("mcp_tool_executions_total", "Total number of tool executions", ["tool_name", "status"])
 
 TOOL_EXECUTION_DURATION = Histogram(
     "mcp_tool_execution_duration_seconds", "Tool execution duration in seconds", ["tool_name"]

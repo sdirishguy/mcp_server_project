@@ -63,11 +63,7 @@ def _choose_call_style(handler: Any, payload: dict) -> str:
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params):
         return "kwargs"
 
-    pos = [
-        p
-        for p in params
-        if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
-    ]
+    pos = [p for p in params if p.kind in (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)]
     if len(pos) == 1:
         return "single" if pos[0].name in DICTY_SINGLE_PARAM_NAMES else "kwargs"
 
@@ -92,9 +88,7 @@ def call_tool(
     from app.tools import ALL_TOOLS
 
     tools_typed: list[ToolEntry] = cast("list[ToolEntry]", ALL_TOOLS)
-    mapping: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
-        t["name"]: t["handler"] for t in tools_typed
-    }
+    mapping: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {t["name"]: t["handler"] for t in tools_typed}
     h = mapping.get(name)
     if h is None:
         typer.echo(f"Tool not found: {name}", err=True)

@@ -57,12 +57,8 @@ class Settings(BaseSettings):
     SHELL_ALLOWLIST: list[str] = []
 
     # JWT authentication
-    JWT_SECRET: str = Field(
-        default="change-me", description="Secret key used to sign JWT tokens"
-    )
-    JWT_EXPIRY_MINUTES: int = Field(
-        default=60, description="Number of minutes before issued JWT tokens expire"
-    )
+    JWT_SECRET: str = Field(default="change-me", description="Secret key used to sign JWT tokens")
+    JWT_EXPIRY_MINUTES: int = Field(default=60, description="Number of minutes before issued JWT tokens expire")
 
     # API keys for external LLM services
     OPENAI_API_KEY: str | None = None

@@ -47,9 +47,7 @@ class TestAuthentication:
 
     def test_login_invalid_credentials(self, client):
         """Test login with invalid credentials."""
-        response = client.post(
-            "/api/auth/login", json={"username": "invalid", "password": "invalid"}
-        )
+        response = client.post("/api/auth/login", json={"username": "invalid", "password": "invalid"})
 
         assert response.status_code == 401
         data = response.json()
@@ -104,9 +102,7 @@ class TestHealthEndpoints:
 class TestToolExecution:
     """Test tool execution through the API."""
 
-    @pytest.mark.skip(
-        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
-    )
+    @pytest.mark.skip(reason="FastMCP tool execution requires proper lifespan integration - see issue report")
     def test_file_system_tools_flow(self, client):
         """Test complete filesystem tools flow."""
         # Get auth token directly
@@ -181,9 +177,7 @@ class TestToolExecution:
         assert "result" in read_data
         assert "Integration test content" in str(read_data["result"])
 
-    @pytest.mark.skip(
-        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
-    )
+    @pytest.mark.skip(reason="FastMCP tool execution requires proper lifespan integration - see issue report")
     def test_shell_command_disabled(self, client):
         """Test shell command when disabled."""
         # Get auth token directly
@@ -222,9 +216,7 @@ class TestRateLimiting:
         # Make multiple rapid login attempts
         responses = []
         for i in range(10):
-            response = client.post(
-                "/api/auth/login", json={"username": "invalid", "password": "invalid"}
-            )
+            response = client.post("/api/auth/login", json={"username": "invalid", "password": "invalid"})
             responses.append(response)
 
         # Check if rate limiting kicked in
@@ -255,9 +247,7 @@ class TestSecurityHeaders:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
-    @pytest.mark.skip(
-        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
-    )
+    @pytest.mark.skip(reason="FastMCP tool execution requires proper lifespan integration - see issue report")
     def test_invalid_json_rpc(self, client):
         """Test handling of invalid JSON-RPC requests."""
         # Get auth token directly
@@ -279,9 +269,7 @@ class TestErrorHandling:
         # Should handle gracefully
         assert response.status_code in [200, 400, 500]
 
-    @pytest.mark.skip(
-        reason="FastMCP tool execution requires proper lifespan integration - see issue report"
-    )
+    @pytest.mark.skip(reason="FastMCP tool execution requires proper lifespan integration - see issue report")
     def test_nonexistent_tool(self, client):
         """Test calling non-existent tool."""
         # Get auth token directly

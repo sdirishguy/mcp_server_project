@@ -61,9 +61,7 @@ def _wants_single_param(handler: Any) -> bool:
     except (ValueError, TypeError):
         return False
     params = [
-        p
-        for p in sig.parameters.values()
-        if p.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
+        p for p in sig.parameters.values() if p.kind in (Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD)
     ]
     return len(params) == 1 and params[0].kind == Parameter.POSITIONAL_OR_KEYWORD
 
@@ -71,9 +69,7 @@ def _wants_single_param(handler: Any) -> bool:
 @app.post("/tools/run", response_model=RunToolResponse, summary="Execute a tool by name")
 async def run_tool(req: RunToolRequest) -> RunToolResponse:
     # Build a name->handler map (keeps lines short + helps mypy)
-    mapping: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {
-        t["name"]: t["handler"] for t in _TOOLS
-    }
+    mapping: dict[str, Callable[..., Awaitable[dict[str, Any]]]] = {t["name"]: t["handler"] for t in _TOOLS}
     h = mapping.get(req.name)
     if h is None:
         raise HTTPException(status_code=404, detail=f"Tool not found: {req.name}")
