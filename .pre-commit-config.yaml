@@ -15,10 +15,4 @@ repos:
     hooks:
       - id: bandit
         name: bandit (app only)
-        args:
-          - -r
-          - app
-          - --severity-level
-          - medium
-          - --confidence-level
-          - high
+        args: [--severity-level, medium, --confidence-level, high, -r, app]

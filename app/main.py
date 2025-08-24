@@ -91,8 +91,8 @@ async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
     # Use JWT for production and in-memory fallback for tests or if JWT secret is default
-    # When JWT_SECRET is set to a non-trivial value, prefer JWT auth provider.
-    if settings.JWT_SECRET and settings.JWT_SECRET != "change-me":
+    # Prefer JWT auth when JWT_SECRET is set to a non-default value.
+    if settings.JWT_SECRET and settings.JWT_SECRET.lower() not in {"", "default", "unset"}:
         jwt_provider = JWTAuthProvider(
             secret=settings.JWT_SECRET,
             expiry_minutes=settings.JWT_EXPIRY_MINUTES,
@@ -173,7 +173,7 @@ async def login(request: Request) -> JSONResponse:
                         {
                             "authenticated": True,
                             "user_id": "test_user",
-                            "token": "test_token_12345",
+                            "token": settings.TEST_BYPASS_TOKEN or "test_token_12345",
                             "roles": ["admin"],
                             "expires_at": "2025-12-31T23:59:59Z",
                         }
@@ -539,7 +539,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         # For protected routes, check authentication
         auth_header = request.headers.get("authorization", "")
-        token = ""
+        token: str = ""  # benign sentinel, not a credential  # nosec B105
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
 
@@ -551,8 +551,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             is_testing = os.getenv("TESTING") == "true"
 
             if is_testing:
-                # In test environment, accept any token that looks like our test token
-                if token == "test_token_12345":
+                # In test env only, allow a bypass token from env (disabled by default)
+                test_bypass = settings.TEST_BYPASS_TOKEN or "disabled"
+                if test_bypass != "disabled" and token == test_bypass:
                     # Create a mock user for testing
                     from app.main import User
 
@@ -659,9 +660,5 @@ if __name__ == "__main__":
     configure_json_logging(settings.LOG_LEVEL)
     import uvicorn
 
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=settings.SERVER_PORT,
-        reload=True,
-    )
+    bind_host = getattr(settings, "SERVER_HOST", None) or "127.0.0.1"
+    uvicorn.run("app.main:app", host=bind_host, port=settings.SERVER_PORT)

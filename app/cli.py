@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import subprocess
+import subprocess  # nosec B404 (intentional: invoking uvicorn)
 from collections.abc import Awaitable, Callable
 from typing import Any, TypedDict, cast
 
@@ -26,7 +26,8 @@ app.add_typer(tools_app, name="tools")
 
 @app.command()
 def run(
-    host: str = "0.0.0.0",
+    # Bind locally by default; Docker/Prod should set SERVER_HOST=0.0.0.0
+    host: str = "127.0.0.1",
     port: int = 8000,
     reload: bool = True,
     log_level: str = "info",
@@ -140,7 +141,9 @@ def test(path: str = "tests", extra: str = "") -> None:
     cmd = ["pytest", path]
     if extra:
         cmd.extend(extra.split())
-    raise SystemExit(subprocess.call(cmd))
+    # Controlled argv list, no shell. Non-fatal exit code allowed in dev.
+    result = subprocess.run(cmd, check=False)  # nosec B603
+    raise SystemExit(result.returncode)
 
 
 if __name__ == "__main__":

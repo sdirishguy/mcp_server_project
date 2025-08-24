@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     ADMIN_PASSWORD: str = Field(default="admin123", description="Admin password")
 
     # Server configuration
+    SERVER_HOST: str = "127.0.0.1"
     SERVER_PORT: int = 8000
 
     # MCP / adapters
@@ -57,8 +58,9 @@ class Settings(BaseSettings):
     SHELL_ALLOWLIST: list[str] = []
 
     # JWT authentication
-    JWT_SECRET: str = Field(default="change-me", description="Secret key used to sign JWT tokens")
+    JWT_SECRET: str = Field(default="", description="Secret key used to sign JWT tokens")
     JWT_EXPIRY_MINUTES: int = Field(default=60, description="Number of minutes before issued JWT tokens expire")
+    TEST_BYPASS_TOKEN: str = Field(default="", description="Test bypass token (empty = disabled)")
 
     # API keys for external LLM services
     OPENAI_API_KEY: str | None = None
