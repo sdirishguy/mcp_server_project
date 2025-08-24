@@ -4,6 +4,7 @@ REST API adapter for the Model Context Protocol (MCP).
 This module provides an adapter for connecting to REST APIs.
 """
 
+import logging
 from typing import Any
 
 from ...core.adapter import (
@@ -13,6 +14,8 @@ from ...core.adapter import (
     DataResponse,
     MCPAdapter,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RestApiAdapter(MCPAdapter):
@@ -183,7 +186,7 @@ class RestApiAdapter(MCPAdapter):
         try:
             if self._client:
                 await self._client.aclose()
-        except Exception:
-            pass
+        except Exception as exc:  # nosec B110 (handled with debug log)
+            logger.debug("REST adapter client close() failed", exc_info=exc)
         finally:
             self._client = None
