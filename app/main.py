@@ -91,8 +91,13 @@ async def setup_mcp() -> dict[str, Any]:
     """Set up MCP components including auth, audit, cache, and adapters."""
     auth_manager = AuthenticationManager()
     # Use JWT for production and in-memory fallback for tests or if JWT secret is default
-    # Prefer JWT auth when JWT_SECRET is set to a non-default value.
-    if settings.JWT_SECRET and settings.JWT_SECRET.lower() not in {"", "default", "unset"}:
+    # Prefer JWT auth only if the secret is non-trivial
+    jwt_ok = (
+        bool(settings.JWT_SECRET)
+        and settings.JWT_SECRET not in {"change-me", "default", "unset"}
+        and len(settings.JWT_SECRET) >= 32
+    )
+    if jwt_ok:
         jwt_provider = JWTAuthProvider(
             secret=settings.JWT_SECRET,
             expiry_minutes=settings.JWT_EXPIRY_MINUTES,
@@ -167,13 +172,26 @@ async def login(request: Request) -> JSONResponse:
                 username = credentials.get("username")
                 password = credentials.get("password")
 
+                # Check for test bypass token first
+                test_bypass = settings.TEST_BYPASS_TOKEN
+                if test_bypass:
+                    # Issue bypass token only when explicitly configured
+                    return JSONResponse(
+                        {
+                            "authenticated": True,
+                            "token": test_bypass,
+                            "user_id": "test-bypass",
+                            "provider": "bypass",
+                        }
+                    )
+
                 # Check against test credentials
                 if username == settings.ADMIN_USERNAME and password == settings.ADMIN_PASSWORD:
                     return JSONResponse(
                         {
                             "authenticated": True,
                             "user_id": "test_user",
-                            "token": settings.TEST_BYPASS_TOKEN or "test_token_12345",
+                            "token": "test_token_12345",
                             "roles": ["admin"],
                             "expires_at": "2025-12-31T23:59:59Z",
                         }
@@ -551,17 +569,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             is_testing = os.getenv("TESTING") == "true"
 
             if is_testing:
-                # In test env only, allow a bypass token from env (disabled by default)
-                test_bypass = settings.TEST_BYPASS_TOKEN or "disabled"
-                if test_bypass != "disabled" and token == test_bypass:
-                    # Create a mock user for testing
-                    from app.main import User
-
-                    request.state.user = User(
-                        user_id="test_user",
-                        roles=["admin"],
-                        permissions=["read", "write"],
-                    )
+                # Check for test bypass token
+                test_bypass = settings.TEST_BYPASS_TOKEN
+                if test_bypass and token == test_bypass:
+                    request.state.user = {"id": "test-bypass", "role": "admin"}
                     return await call_next(request)
                 else:
                     return JSONResponse({"message": "Invalid token"}, status_code=401)
