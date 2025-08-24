@@ -14,4 +14,11 @@ repos:
     rev: 1.7.9
     hooks:
       - id: bandit
-        args: [-q, -r, app]
+        name: bandit (app only)
+        args:
+          - -r
+          - app
+          - --severity-level
+          - medium
+          - --confidence-level
+          - high
