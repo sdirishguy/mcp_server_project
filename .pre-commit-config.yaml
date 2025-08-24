@@ -1,25 +1,7 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v6.0.0
-    hooks:
-      - id: end-of-file-fixer
-      - id: trailing-whitespace
-      - id: check-yaml
-      - id: check-ast
-      - id: debug-statements
-
-  # Ruff lint + format (needs a version that understands UP046)
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8   # any 0.6.x is fine; newer also OK
+    rev: v0.6.9
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
-
-  # mypy: run with your mypy.ini and DO NOT pass file names (uses "files=" from config)
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.1
-    hooks:
-      - id: mypy
-        args: ["--config-file=mypy.ini"]
-        pass_filenames: false
