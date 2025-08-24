@@ -74,6 +74,10 @@ pip install -r requirements.txt
 
 **Environment (recommended):**
 ```bash
+# Copy the example and customize:
+cp .env.example .env
+
+# Or set manually:
 export MCP_SERVER_PORT=8000
 export AUDIT_LOG_FILE=./logs/audit.log
 export JWT_SECRET="change-this-in-prod"
