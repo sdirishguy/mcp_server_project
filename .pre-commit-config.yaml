@@ -3,13 +3,19 @@ repos:
     rev: v0.6.9
     hooks:
       - id: ruff
-        args: [--fix]
+        args: ["--fix"]
       - id: ruff-format
+
   - repo: https://github.com/PyCQA/bandit
-    rev: '1.7.8'
+    rev: "1.7.8"
     hooks:
       - id: bandit
-        name: bandit (security static analysis)
+        name: bandit (app/)
         args: ["-q", "-r", "app", "--severity-level", "medium", "--confidence-level", "high"]
-        files: ^app/.*\.py$
         pass_filenames: false
+
+  - repo: https://github.com/pypa/pip-audit
+    rev: v2.7.3
+    hooks:
+      - id: pip-audit
+        args: ["--strict"]

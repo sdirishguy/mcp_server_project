@@ -4,3 +4,6 @@ secret:
     - ".env.example"
     - "tests/**"
     - "package_control_channel/**"
+  validity:
+    # Optional: require a bit of entropy before flagging
+    minimum_entropy: 3.5
