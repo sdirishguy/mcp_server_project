@@ -162,18 +162,6 @@ async def login(request: Request) -> JSONResponse:
         )
 
         if auth_result.authenticated:
-            # Issue a token that middleware will accept:
-            if "jwt" in provider_ids:
-                token_to_return = auth_result.token
-            else:
-                # Local provider: deterministic token for tests (or honor explicit CI override)
-                token_to_return = settings.TEST_BYPASS_TOKEN or "test-local-token"
-
-            # remember issued tokens for local provider during this process lifetime
-            if not hasattr(request.app.state, "issued_tokens"):
-                request.app.state.issued_tokens = set()  # type: ignore[attr-defined]
-            request.app.state.issued_tokens.add(token_to_return)  # type: ignore[attr-defined]
-
             record_auth_attempt("success")
             await mcp_components["audit_logger"].log_event(
                 AuditEventType.LOGIN,
@@ -188,7 +176,7 @@ async def login(request: Request) -> JSONResponse:
                 {
                     "authenticated": True,
                     "user_id": auth_result.user_id,
-                    "token": token_to_return,
+                    "token": auth_result.token,
                     "roles": auth_result.roles,
                     "expires_at": auth_result.expires_at,
                 }
@@ -483,7 +471,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         auth_header = request.headers.get("authorization", "")
-        token: str = ""  # nosec B105 (benign sentinel)
+        token: str = ""
 
         # Accept "Bearer <token>", "Token <token>", or raw "<token>"
         if auth_header:
@@ -503,7 +491,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             mcp_components = request.app.state.mcp_components
             auth_manager = mcp_components["auth_manager"]
 
-            # 1) Primary path: always try to validate via the active providers
+            # Try to validate the token through the authentication manager
             auth_result = await auth_manager.validate_token(token)
             if auth_result.authenticated:
                 request.state.user = User(
@@ -513,15 +501,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 )
                 return await call_next(request)
 
-            # 2) Fallback for local provider in tests:
-            provider_ids = auth_manager.get_provider_ids()
-            if "jwt" not in provider_ids:
-                expected = settings.TEST_BYPASS_TOKEN or "test-local-token"
-                issued_tokens = getattr(request.app.state, "issued_tokens", set())
-                if token == expected or token in issued_tokens:
-                    request.state.user = User("test-local", roles=["admin"])
-                    return await call_next(request)
-
+            # If validation failed, return 401
             return JSONResponse({"message": "Invalid token"}, status_code=401)
 
         except Exception:

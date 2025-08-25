@@ -121,24 +121,17 @@ def client(test_app: Starlette) -> TestClient:
 @pytest.fixture
 def auth_token(client: TestClient) -> str:
     """Get authentication token for testing."""
-    # In test mode, use TEST_BYPASS_TOKEN from environment
-    is_testing = os.getenv("TESTING") == "true"
-    if is_testing:
-        test_bypass = os.getenv("TEST_BYPASS_TOKEN")
-        if test_bypass:
-            return test_bypass
-        else:
-            # If no TEST_BYPASS_TOKEN is set, try to get one via login
-            test_username = settings.ADMIN_USERNAME or "admin"
-            test_password = settings.ADMIN_PASSWORD or "admin123"
-            response = client.post(
-                "/api/auth/login",
-                json={"username": test_username, "password": test_password},
-            )
-            if response.status_code == 200:
-                return response.json().get("token", "")
-            else:
-                return ""
+    test_username = settings.ADMIN_USERNAME or "admin"
+    test_password = settings.ADMIN_PASSWORD or "admin123"
+    response = client.post(
+        "/api/auth/login",
+        json={"username": test_username, "password": test_password},
+    )
+
+    if response.status_code == 200:
+        return response.json().get("token", "")
+    else:
+        return ""
 
     # In production mode, make actual login request
     test_username = settings.ADMIN_USERNAME or "admin"
