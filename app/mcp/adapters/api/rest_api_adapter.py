@@ -89,7 +89,7 @@ class RestApiAdapter(MCPAdapter):
             DataResponse: The response from the data source
         """
         try:
-            if not self._client or not self._client["connected"]:
+            if self._client is None:
                 return DataResponse(
                     data=None,
                     status_code=500,
@@ -171,12 +171,12 @@ class RestApiAdapter(MCPAdapter):
             bool: True if the adapter is healthy, False otherwise
         """
         try:
-            if not self._client or not self._client["connected"]:
+            if self._client is None:
                 return False
 
             # In a real implementation, we would make a request to the base URL
-            # For this example, we'll just check if the client is connected
-            return self._client["connected"]
+            # For this example, we'll just check if the client exists
+            return self._client is not None
         except Exception:  # pylint: disable=broad-exception-caught
             return False
 

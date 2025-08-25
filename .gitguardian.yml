@@ -3,3 +3,4 @@ secret:
   ignored_paths:
     - ".env.example"
     - "tests/**"
+    - "package_control_channel/**"

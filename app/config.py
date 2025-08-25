@@ -32,8 +32,8 @@ class Settings(BaseSettings):
 
     # Logging & authentication
     LOG_LEVEL: str = "INFO"
-    ADMIN_USERNAME: str = Field(default="admin", description="Admin username")
-    ADMIN_PASSWORD: str = Field(default="admin123", description="Admin password")
+    ADMIN_USERNAME: str = Field(default="", description="Admin username")  # set via env
+    ADMIN_PASSWORD: str = Field(default="", description="Admin password")  # set via env
 
     # Server configuration
     SERVER_HOST: str = "127.0.0.1"

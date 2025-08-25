@@ -20,6 +20,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -168,39 +169,21 @@ async def login(request: Request) -> JSONResponse:
 
             # Get credentials from request
             try:
-                credentials = await request.json()
-                username = credentials.get("username")
-                password = credentials.get("password")
-
                 # Check for test bypass token first
-                test_bypass = settings.TEST_BYPASS_TOKEN
-                if test_bypass:
-                    # Issue bypass token only when explicitly configured
-                    return JSONResponse(
-                        {
-                            "authenticated": True,
-                            "token": test_bypass,
-                            "user_id": "test-bypass",
-                            "provider": "bypass",
-                        }
-                    )
+                test_bypass = settings.TEST_BYPASS_TOKEN or ""
+                if not test_bypass:
+                    raise HTTPException(status_code=401, detail="Test bypass disabled")
+                token = test_bypass
+                provider = "bypass"
 
-                # Check against test credentials
-                if username == settings.ADMIN_USERNAME and password == settings.ADMIN_PASSWORD:
-                    return JSONResponse(
-                        {
-                            "authenticated": True,
-                            "user_id": "test_user",
-                            "token": "test_token_12345",
-                            "roles": ["admin"],
-                            "expires_at": "2025-12-31T23:59:59Z",
-                        }
-                    )
-                else:
-                    return JSONResponse(
-                        {"authenticated": False, "error": "Invalid credentials"},
-                        status_code=401,
-                    )
+                return JSONResponse(
+                    {
+                        "authenticated": True,
+                        "token": token,
+                        "user_id": "test-bypass",
+                        "provider": provider,
+                    }
+                )
             except Exception as e:
                 logger.warning(f"DEBUG: Error parsing credentials in test mode: {e}")
                 return JSONResponse(
