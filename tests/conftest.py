@@ -121,15 +121,31 @@ def client(test_app: Starlette) -> TestClient:
 @pytest.fixture
 def auth_token(client: TestClient) -> str:
     """Get authentication token for testing."""
-    # In test mode, return our test token directly
+    # In test mode, use TEST_BYPASS_TOKEN from environment
     is_testing = os.getenv("TESTING") == "true"
     if is_testing:
-        return "test_token_12345"
+        test_bypass = os.getenv("TEST_BYPASS_TOKEN")
+        if test_bypass:
+            return test_bypass
+        else:
+            # If no TEST_BYPASS_TOKEN is set, try to get one via login
+            test_username = settings.ADMIN_USERNAME or "admin"
+            test_password = settings.ADMIN_PASSWORD or "admin123"
+            response = client.post(
+                "/api/auth/login",
+                json={"username": test_username, "password": test_password},
+            )
+            if response.status_code == 200:
+                return response.json().get("token", "")
+            else:
+                return ""
 
     # In production mode, make actual login request
+    test_username = settings.ADMIN_USERNAME or "admin"
+    test_password = settings.ADMIN_PASSWORD or "admin123"
     response = client.post(
         "/api/auth/login",
-        json={"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
+        json={"username": test_username, "password": test_password},
     )
 
     if response.status_code == 200:
@@ -183,8 +199,12 @@ def mock_shell_commands():
 @pytest.fixture
 def test_data():
     """Provide test data for various test scenarios."""
+    # Use test credentials for testing, fall back to settings if available
+    test_username = settings.ADMIN_USERNAME or "admin"
+    test_password = settings.ADMIN_PASSWORD or "admin123"
+
     return {
-        "valid_user": {"username": settings.ADMIN_USERNAME, "password": settings.ADMIN_PASSWORD},
+        "valid_user": {"username": test_username, "password": test_password},
         "invalid_user": {"username": "invalid", "password": "invalid"},
         "test_file": {"path": "/tmp/test.txt", "content": "test content"},
         "test_command": {"command": "echo 'test'", "expected_output": "test"},
