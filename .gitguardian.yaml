@@ -1,5 +1,0 @@
-# Ignore non-production example files and tests
-paths-ignore:
-  - ".env.example"
-  - "tests/**"
-  - "package_control_channel/**"
