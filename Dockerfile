@@ -1,44 +1,55 @@
-# Dockerfile
+# Multi-stage build for smaller production image
+FROM python:3.12-slim as builder
 
-FROM python:3.12-slim
-
-# System deps and setup
-RUN apt-get update && apt-get install -y \
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Make a non-root user for safety
-RUN useradd -ms /bin/bash appuser
-
-# Workdir in the container
+# Install Python dependencies
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Requirements
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Production stage
+FROM python:3.12-slim
 
-# Copy app code
-COPY app ./app
-COPY shared_host_folder ./shared_host_folder
+# Install runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get autoremove -y
 
-# Create directories for logs and data, and set proper permissions
-RUN mkdir -p /app/logs /app/host_data && \
-    chown -R appuser:appuser /app/logs /app/host_data /app/shared_host_folder
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash --uid 1000 appuser
 
-# Default to non-root user
+# Copy Python packages from builder
+COPY --from=builder /root/.local /home/appuser/.local
+
+# Set up application
+WORKDIR /app
+COPY --chown=appuser:appuser app ./app
+
+# Create required directories with proper permissions
+RUN mkdir -p /app/logs /app/shared_host_folder \
+    && chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
-# Expose MCP port (and FastAPI if you use it separately)
+# Add local Python packages to PATH
+ENV PATH=/home/appuser/.local/bin:$PATH
+
+# Production configuration
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    AUDIT_LOG_FILE=/app/logs/audit.log \
+    MCP_BASE_WORKING_DIR=/app/shared_host_folder
+
 EXPOSE 8000
 
-# Set environment variable for audit log location
-ENV AUDIT_LOG_FILE=/app/logs/audit.log
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Entrypoint: run the MCP server by default
 CMD ["python", "-m", "app.main"]
-
-
-# Commands to run file
-# docker build -t mcp-server .
-# docker run -it --rm -p 8000:8000 -v $PWD/host_data:/app/host_data -v $PWD/logs:/app/logs mcp-server

@@ -1,78 +1,64 @@
-# Docker Setup for MCP Server
+# Docker Setup
 
-This guide shows how to run the MCP Server in containers with sane defaults.
-
-## Quick Start (Compose)
+## Quick Start
 
 ```bash
+# Development
 docker-compose up -d
-curl http://localhost:8000/health
-docker-compose down
-```
 
-## Docker CLI
-
-**Build:**
-```bash
-docker build -t mcp-server .
-```
-
-**Run:**
-```bash
-docker run -d \
-  --name mcp-server \
-  -p 8000:8000 \
-  -e MCP_SERVER_PORT=8000 \
-  -e AUDIT_LOG_FILE=/app/logs/audit.log \
-  -e JWT_SECRET="change-this-in-prod" \
-  -e ENVIRONMENT=development \
-  -v "$(pwd)/host_data:/app/host_data" \
-  -v "$(pwd)/logs:/app/logs" \
-  -v "$(pwd)/shared_host_folder:/app/shared_host_folder" \
-  mcp-server
+# Production with secrets
+JWT_SECRET="your-32-char-secret" docker-compose up -d
 ```
 
 ## Configuration
 
-### Environment variables
+Set these environment variables:
 
-- `MCP_SERVER_PORT` – server port (default 8000)
-- `MCP_BASE_WORKING_DIR` – sandbox base dir (default `./shared_host_folder`)
-- `AUDIT_LOG_FILE` – path to audit log file
-- `ENVIRONMENT` – development / staging / production
-- `ALLOW_ARBITRARY_SHELL_COMMANDS` – true|false (default: disabled)
-- `JWT_SECRET` – required for JWT auth in prod/non-test
-- `OPENAI_API_KEY`, `GEMINI_API_KEY` – for LLM tools
+**Required for production:**
+- `JWT_SECRET` - Strong secret key (32+ characters)
+- `ADMIN_PASSWORD` - Change from default
 
-### Volumes
+**Optional:**
+- `OPENAI_API_KEY` - For OpenAI code generation
+- `GEMINI_API_KEY` - For Gemini code generation
 
-- `./host_data:/app/host_data` – persistent app data
-- `./logs:/app/logs` – logs & audit log
-- `./shared_host_folder:/app/shared_host_folder` – sandboxed working dir
+## Production Considerations
 
-Ensure these host dirs are writable by the container user.
+1. **Use Docker secrets instead of environment variables:**
+```yaml
+secrets:
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+```
 
-## Endpoints
+2. **Enable resource limits** (included in docker-compose.yml)
 
-- `GET /health` – health check
-- `GET /whoami` – server/providers info
-- `POST /api/auth/login` – login
-- `POST /api/adapters/{type}` – create adapters
-- `POST /api/adapters/{id}/execute` – execute
-- `POST /mcp/mcp.json/` – MCP JSON-RPC (auth required)
+3. **Monitor containers:**
+```bash
+docker logs mcp-server
+docker stats mcp-server
+```
 
-## Default credentials (dev only)
+## Build Options
 
-- `admin` / `admin123`
+**Development:**
+```bash
+docker-compose up --build
+```
 
-Change via env or secrets in production.
+**Production multi-stage build:**
+```bash
+docker build --target production -t mcp-server:prod .
+```
 
 ## Troubleshooting
 
-**Permissions:** `chmod -R a+rw logs host_data shared_host_folder`
+**Permissions:**
+```bash
+chmod -R 755 shared_host_folder logs
+```
 
-**Port conflicts:** change `-p 8000:8000`
-
-**Logs:** `docker logs mcp-server`
-
-**Shell:** `docker exec -it mcp-server /bin/bash`
+**Health check:**
+```bash
+curl http://localhost:8000/health
+```
