@@ -26,6 +26,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Select TEST_BYPASS_TOKEN (secret if available, else default)
+        run: echo "TEST_BYPASS_TOKEN=${TOKEN:-test-bypass-ci}" >> "$GITHUB_ENV"
+        env:
+          TOKEN: ${{ secrets.TEST_BYPASS_TOKEN }}
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
