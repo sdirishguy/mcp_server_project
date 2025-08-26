@@ -19,6 +19,8 @@ jobs:
       PYTHONUNBUFFERED: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       TESTING: "true"
+      ADMIN_USERNAME: "admin"
+      ADMIN_PASSWORD: "admin123"
 
     steps:
       - name: Checkout
