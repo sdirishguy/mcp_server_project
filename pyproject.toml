@@ -1,5 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-server-project"
+version = "0.1.0"
+description = "MCP Server Project"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+dependencies = [
+    "fastapi",
+    "starlette",
+    "uvicorn",
+    "fastmcp",
+    "slowapi",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+    # Add other dependencies as needed
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pytest-anyio",
+    "pre-commit",
+    "ruff",
+    "bandit",
+    "pip-audit",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["shared_host_folder*", "package_control_channel*", "tests*"]
+
 [tool.black]
-line-length = 120            # <- match Ruff
+line-length = 120
 target-version = ["py312"]
 extend-exclude = '''
 ^(
@@ -14,7 +52,7 @@ extend-exclude = '''
 
 [tool.isort]
 profile = "black"
-line_length = 120            # <- match Black/Ruff (keep if you're still using isort)
+line_length = 120
 skip_glob = [
   "package_control_channel/**",
   ".venv/**",
@@ -37,10 +75,9 @@ extend-exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-# ignore = ["UP046"]  # <- remove; not using UP rules
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]  # optional but helpful
+known-first-party = ["app"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -54,10 +91,13 @@ pythonpath = ["."]
 markers = [
   "anyio: marks tests as needing anyio (deselect with '-m \"not anyio\"')",
   "asyncio: marks tests as needing asyncio",
+  "integration: marks tests as integration tests",
 ]
-# If you use AnyIO, you can also set ANYIO_BACKEND=asyncio in CI env.
 
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
 strict = false
+
+[tool.bandit]
+exclude_dirs = ["tests", "package_control_channel"]

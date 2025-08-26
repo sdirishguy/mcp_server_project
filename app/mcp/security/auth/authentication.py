@@ -3,6 +3,16 @@ Authentication system for the Model Context Protocol (MCP).
 
 This module provides interfaces and implementations for authenticating
 users and services connecting to MCP.
+
+ARCHITECTURE: Provider-based authentication system
+- Supports multiple authentication providers (JWT, InMemory, future: OAUTH, LDAP)
+- Clean separation between authentication logic and storage
+- Pluggable design allows easy extension for new auth methods
+
+CRITICAL ISSUE RESOLVED: Token validation sync problems
+- Previous dual token tracking caused 401 errors in tests/CI
+- Now single source of truth through provider's own token storage
+- Eliminates race conditions between login and validation
 """
 
 import time
@@ -13,7 +23,14 @@ from pydantic import BaseModel, Field
 
 
 class AuthenticationResult(BaseModel):
-    """Result of an authentication attempt."""
+    """Result of an authentication attempt.
+
+    DESIGN: Comprehensive authentication response
+    - Includes all necessary information for authorization decisions
+    - Supports both successful and failed authentication scenarios
+    - Extensible metadata field for provider-specific information
+    - Unix timestamp for consistent expiration handling
+    """
 
     authenticated: bool = Field(..., description="Whether authentication was successful")
     user_id: str | None = Field(None, description="ID of the authenticated user")
@@ -25,17 +42,29 @@ class AuthenticationResult(BaseModel):
 
 
 class AuthenticationProvider(ABC):
-    """Interface for authentication providers."""
+    """Interface for authentication providers.
+
+    DESIGN PATTERN: Abstract base class for providers
+    - Ensures consistent interface across all authentication methods
+    - Supports standard auth flow: authenticate -> get token -> validate token
+    - Includes token refresh capability for long-running sessions
+    - Each provider handles its own token format and validation logic
+    """
 
     @abstractmethod
     async def authenticate(self, credentials: dict[str, Any]) -> AuthenticationResult:
         """Authenticate a user with provided credentials.
 
         Args:
-            credentials: Authentication credentials
+            credentials: Authentication credentials (username/password, API key, etc.)
 
         Returns:
             AuthenticationResult: Result of the authentication attempt
+
+        DESIGN: Flexible credential format
+        - Dict allows different providers to accept different credential types
+        - Username/password, API keys, OAuth tokens, etc.
+        - Provider validates format and returns structured result
         """
         raise NotImplementedError
 
@@ -48,6 +77,11 @@ class AuthenticationProvider(ABC):
 
         Returns:
             AuthenticationResult: Result of the token validation
+
+        CRITICAL: Single source of truth for token validation
+        - Each provider maintains its own token storage/validation
+        - No external token tracking needed
+        - Prevents sync issues between multiple token stores
         """
         raise NotImplementedError
 
@@ -60,12 +94,24 @@ class AuthenticationProvider(ABC):
 
         Returns:
             AuthenticationResult: Result with a new token if successful
+
+        FUTURE: Token refresh for long-running sessions
+        - Allows extending sessions without re-authentication
+        - Supports rotating tokens for security
+        - Currently implemented as re-issue in simple providers
         """
         raise NotImplementedError
 
 
 class AuthenticationManager:
-    """Manages multiple authentication providers."""
+    """Manages multiple authentication providers.
+
+    ARCHITECTURE: Multi-provider management
+    - Allows multiple authentication methods in same application
+    - Provider selection based on requirements (JWT for production, InMemory for testing)
+    - Fallback mechanisms for graceful degradation
+    - Centralized token validation across all providers
+    """
 
     def __init__(self):
         self._providers: dict[str, AuthenticationProvider] = {}
@@ -74,8 +120,13 @@ class AuthenticationManager:
         """Register an authentication provider.
 
         Args:
-            provider_id: Unique identifier for the provider
+            provider_id: Unique identifier for the provider (e.g., "jwt", "local")
             provider: The authentication provider instance
+
+        DESIGN: Runtime provider registration
+        - Allows conditional provider setup based on configuration
+        - Supports provider switching without code changes
+        - Easy testing with mock providers
         """
         self._providers[provider_id] = provider
 
@@ -91,6 +142,11 @@ class AuthenticationManager:
 
         Raises:
             KeyError: If no provider exists with the given ID
+
+        DESIGN: Explicit provider selection
+        - Allows different auth methods for different endpoints/clients
+        - Clear provider selection prevents accidental fallbacks
+        - Supports provider-specific features and configurations
         """
         if provider_id not in self._providers:
             return AuthenticationResult(authenticated=False)
@@ -105,17 +161,23 @@ class AuthenticationManager:
 
         Returns:
             AuthenticationResult: Result of the token validation
+
+        CRITICAL FIX: Simplified token validation
+        - Tries provider-specific format first (provider_id:token_value)
+        - Falls back to trying all providers for compatibility
+        - Returns first successful validation result
+        - No external token tracking needed
         """
-        # Token format: provider_id:token_value
+        # Token format: provider_id:token_value (optional)
         try:
             provider_id, token_value = token.split(":", 1)
             if provider_id in self._providers:
                 return await self._providers[provider_id].validate_token(token_value)
         except ValueError:
-            # Try each provider if format is invalid
+            # Try each provider if format doesn't include provider prefix
             pass
 
-        # Try all providers
+        # Try all providers for compatibility
         for provider in self._providers.values():
             result = await provider.validate_token(token)
             if result.authenticated:
@@ -143,16 +205,33 @@ class AuthenticationManager:
 
         Returns:
             List[str]: List of provider IDs
+
+        DEBUGGING: Useful for troubleshooting auth issues
+        - Shows which providers are actually registered
+        - Helps debug provider selection logic
+        - Used by /whoami endpoint for system introspection
         """
         return list(self._providers.keys())
 
 
 class InMemoryAuthProvider(AuthenticationProvider):
-    """Simple in-memory authentication provider for testing and development."""
+    """Simple in-memory authentication provider for testing and development.
+
+    DESIGN: Lightweight provider for non-production use
+    - Stores users and tokens in memory (lost on restart)
+    - No external dependencies (database, Redis, etc.)
+    - Perfect for testing, development, and simple deployments
+    - Fast and predictable for CI/CD environments
+
+    SECURITY NOTE: Not suitable for production clustering
+    - Tokens stored in single process memory
+    - No persistence across restarts
+    - No sharing across multiple server instances
+    """
 
     def __init__(self, token_expiry_minutes: int = 60):
         self._users: dict[str, dict[str, Any]] = {}
-        self._tokens: dict[str, dict[str, Any]] = {}
+        self._tokens: dict[str, dict[str, Any]] = {}  # CRITICAL: Single source of truth
         self._token_expiry_minutes = token_expiry_minutes
 
     def add_user(self, username: str, password: str, roles: list[str] = None, permissions: list[str] = None) -> None:
@@ -160,9 +239,14 @@ class InMemoryAuthProvider(AuthenticationProvider):
 
         Args:
             username: Username
-            password: Password
+            password: Password (plain text for simplicity - hash in production)
             roles: Roles assigned to the user
             permissions: Permissions granted to the user
+
+        SECURITY CONSIDERATION: Plain text passwords
+        - Acceptable for testing and development
+        - Production deployments should hash passwords
+        - Consider bcrypt, scrypt, or Argon2 for production
         """
         self._users[username] = {
             "password": password,
@@ -178,6 +262,12 @@ class InMemoryAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result of the authentication attempt
+
+        DESIGN: Simple credential validation
+        - Expects username/password in credentials dict
+        - Generates timestamp-based tokens for simplicity
+        - Stores token metadata for later validation
+        - Returns all user information for authorization decisions
         """
         username = credentials.get("username")
         password = credentials.get("password")
@@ -189,11 +279,12 @@ class InMemoryAuthProvider(AuthenticationProvider):
         if not user or user["password"] != password:
             return AuthenticationResult(authenticated=False)
 
-        # Generate token
+        # Generate simple token: username_timestamp
+        # DESIGN: Predictable tokens for testing
         token = f"{username}_{int(time.time())}"
         expires_at = int(time.time() + self._token_expiry_minutes * 60)
 
-        # Store token
+        # CRITICAL: Store token in provider's own storage
         self._tokens[token] = {"username": username, "expires_at": expires_at}
 
         return AuthenticationResult(
@@ -213,6 +304,12 @@ class InMemoryAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result of the token validation
+
+        CRITICAL FIX: Single source of truth validation
+        - Checks only self._tokens (no external tracking)
+        - Handles token expiration automatically
+        - Cleans up expired tokens to prevent memory leaks
+        - Returns full user information for authorization
         """
         token_data = self._tokens.get(token)
         if not token_data:
@@ -220,13 +317,14 @@ class InMemoryAuthProvider(AuthenticationProvider):
 
         # Check if token is expired
         if token_data["expires_at"] < int(time.time()):
-            # Remove expired token
+            # Remove expired token to prevent memory leaks
             del self._tokens[token]
             return AuthenticationResult(authenticated=False)
 
         username = token_data["username"]
         user = self._users.get(username)
         if not user:
+            # User was deleted after token was issued
             return AuthenticationResult(authenticated=False)
 
         return AuthenticationResult(
@@ -247,9 +345,14 @@ class InMemoryAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result with a new token if successful
+
+        DESIGN: Simple refresh implementation
+        - Uses same token as both access and refresh token
+        - Validates existing token first
+        - Generates new token with fresh expiration
+        - Maintains same user privileges
         """
-        # Validate the refresh token (same as the access token in this simple
-        # implementation for now).
+        # Validate the refresh token (same as the access token in this simple implementation)
         result = await self.validate_token(refresh_token)
         if not result.authenticated:
             return result
@@ -279,9 +382,28 @@ class JWTAuthProvider(AuthenticationProvider):
     The token payload includes the subject (username), roles, permissions and
     expiration timestamp.  When authenticating, it returns an
     ``AuthenticationResult`` containing the encoded token and expiry.
+
+    SECURITY: Production-ready authentication
+    - Uses HMAC-SHA256 for token signing
+    - Self-contained tokens (no server-side storage needed)
+    - Stateless authentication suitable for horizontal scaling
+    - Includes standard JWT claims (sub, exp, etc.)
+
+    DESIGN: Hybrid approach
+    - JWT tokens for stateless authentication
+    - In-memory user storage for simplicity
+    - Could be extended to use database/LDAP for users
+    - Base64URL encoding for URL-safe tokens
     """
 
     def __init__(self, secret: str, expiry_minutes: int = 60) -> None:
+        """Initialize JWT provider with signing secret.
+
+        SECURITY: Secret key management
+        - Secret should be cryptographically strong (32+ bytes)
+        - Same secret must be used across all server instances
+        - Consider key rotation for high-security environments
+        """
         self._secret = secret.encode()
         self._expiry_minutes = expiry_minutes
         self._users: dict[str, dict[str, Any]] = {}
@@ -305,21 +427,40 @@ class JWTAuthProvider(AuthenticationProvider):
 
     @staticmethod
     def _base64url_encode(data: bytes) -> str:
-        """Encode bytes as base64url without padding."""
+        """Encode bytes as base64url without padding.
+
+        JWT SPEC: Base64URL encoding without padding
+        - Standard Base64 uses +, /, = characters
+        - Base64URL uses -, _, no padding for URL safety
+        - Required by JWT specification (RFC 7519)
+        """
         import base64
 
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
     @staticmethod
     def _base64url_decode(data: str) -> bytes:
-        """Decode a base64url encoded string, adding padding if necessary."""
+        """Decode a base64url encoded string, adding padding if necessary.
+
+        JWT SPEC: Handle missing padding
+        - Base64URL encoding removes padding
+        - Must add back correct padding for decoding
+        - Calculates padding length from string length
+        """
         import base64
 
         padding = "=" * (-len(data) % 4)
         return base64.urlsafe_b64decode(data + padding)
 
     def _sign(self, msg: bytes) -> bytes:
-        """Return HMAC‑SHA256 signature for a message using the provider's secret."""
+        """Return HMAC‑SHA256 signature for a message using the provider's secret.
+
+        SECURITY: HMAC-SHA256 signing
+        - Industry standard for JWT signing
+        - Cryptographically secure with proper secret
+        - Prevents token tampering and forgery
+        - Fast computation suitable for high-throughput
+        """
         import hashlib
         import hmac
 
@@ -333,6 +474,14 @@ class JWTAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result of the authentication attempt
+
+        JWT CREATION PROCESS:
+        1. Validate credentials against stored users
+        2. Create JWT header (algorithm, type)
+        3. Create JWT payload (subject, roles, expiration)
+        4. Base64URL encode header and payload
+        5. Sign header.payload with HMAC-SHA256
+        6. Return header.payload.signature as token
         """
         username = credentials.get("username")
         password = credentials.get("password")
@@ -347,14 +496,19 @@ class JWTAuthProvider(AuthenticationProvider):
         import json
         import time
 
+        # JWT Header: Algorithm and type
         header = {"alg": "HS256", "typ": "JWT"}
         exp_timestamp = int(time.time() + self._expiry_minutes * 60)
+
+        # JWT Payload: Claims about the user
         payload = {
-            "sub": username,
-            "roles": user["roles"],
-            "permissions": user["permissions"],
-            "exp": exp_timestamp,
+            "sub": username,  # Subject (standard claim)
+            "roles": user["roles"],  # Custom claim
+            "permissions": user["permissions"],  # Custom claim
+            "exp": exp_timestamp,  # Expiration (standard claim)
         }
+
+        # Create JWT: header.payload.signature
         header_b64 = self._base64url_encode(json.dumps(header, separators=(",", ":")).encode())
         payload_b64 = self._base64url_encode(json.dumps(payload, separators=(",", ":")).encode())
         signing_input = f"{header_b64}.{payload_b64}".encode()
@@ -379,6 +533,18 @@ class JWTAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result of validation
+
+        JWT VALIDATION PROCESS:
+        1. Split token into header.payload.signature
+        2. Recreate signing input from header.payload
+        3. Verify signature matches expected signature
+        4. Parse payload and check expiration
+        5. Return user information from token claims
+
+        SECURITY: Constant-time signature comparison
+        - Uses hmac.compare_digest to prevent timing attacks
+        - Validates signature before trusting payload
+        - Checks expiration to prevent replay attacks
         """
         import json
         import time
@@ -389,15 +555,18 @@ class JWTAuthProvider(AuthenticationProvider):
             return AuthenticationResult(authenticated=False)
 
         try:
+            # Verify signature first (before trusting payload)
             signing_input = f"{header_b64}.{payload_b64}".encode()
             expected_sig = self._sign(signing_input)
             provided_sig = self._base64url_decode(signature_b64)
-            # Compare signatures securely
+
+            # SECURITY: Constant-time comparison prevents timing attacks
             import hmac
 
             if not hmac.compare_digest(expected_sig, provided_sig):
                 return AuthenticationResult(authenticated=False)
 
+            # Parse payload after signature verification
             payload_bytes = self._base64url_decode(payload_b64)
             payload = json.loads(payload_bytes)
 
@@ -405,6 +574,7 @@ class JWTAuthProvider(AuthenticationProvider):
             if payload.get("exp") and int(payload["exp"]) < int(time.time()):
                 return AuthenticationResult(authenticated=False)
 
+            # Extract user information from token claims
             username = payload.get("sub")
             roles = payload.get("roles", [])
             permissions = payload.get("permissions", [])
@@ -421,6 +591,7 @@ class JWTAuthProvider(AuthenticationProvider):
             )
         except Exception:
             # Any parsing/validation error results in failed authentication
+            # SECURITY: Fail closed - any error means invalid token
             return AuthenticationResult(authenticated=False)
 
     async def refresh_token(self, refresh_token: str) -> AuthenticationResult:
@@ -431,10 +602,17 @@ class JWTAuthProvider(AuthenticationProvider):
 
         Returns:
             AuthenticationResult: Result containing a new token if the old one is valid
+
+        DESIGN: Token refresh via re-authentication
+        - Validates old token to ensure it's legitimate
+        - Re-issues new token with fresh expiration
+        - Maintains same user privileges and roles
+        - Could be enhanced with separate refresh tokens
         """
         result = await self.validate_token(refresh_token)
         if not result.authenticated:
             return result
+
         # Issue a new token
         username = result.user_id
         # For simplicity, reuse the stored user data; ensure user still exists
